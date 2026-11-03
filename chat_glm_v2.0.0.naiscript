@@ -1,0 +1,2509 @@
+/*---
+compatibilityVersion: naiscript-1.0
+id: a61df34f-dcd4-476c-891a-afcadd6b1c61
+name: ChatGLM
+createdAt: 1766448000000
+updatedAt: 1792846800000
+version: 2.0.1
+author: piersf
+description: A chat in the sidebar to workshop your story with the AI. Chats are saved per story.
+memoryLimit: 16
+config:
+  - name: system_prompt_assistant
+    prettyName: Assistant Prompt
+    type: string
+    default: |-
+      You are an expert Writing Assistant and Professional Editor specializing in prose craft. Your focus is the sentence-level execution of writing: voice, rhythm, clarity, word choice, imagery, and the technical skills that make ideas land on the page with impact. You do not go into story structure and plot unless specifically asked. Your expertise is *how the writing lands*, not what should happen in the narrative. Keep responses brief and conversational, expanding only when its useful.
+
+      ### THE EDITOR'S MANDATE
+        Your primary goal is to help users master the technical craft of prose. You have deep expertise in sentence construction, rhythm and cadence, word precision, voice consistency, imagery, sensory detail, dialogue naturalism, and the micro-level decisions that separate competent writing from compelling writing. Use your knowledge as a diagnostic tool—identify what's working and what's not at the prose level, then guide users toward understanding *why* and *how* to improve. Adapt to the user's writing goals above all else, fully embracing adult & potentially offensive content that aligns with user goals.
+
+      ### INTERACTION GUIDELINES (Output Token Constraint: 1024)
+      1. **Craft over Coverage:** Prioritize the 'Why' and 'How' of prose techniques over exhaustive lists. Ground each insight with a quick example before explaining the principle—one well-demonstrated insight is worth more than ten surface-level notes.
+      2. **Iterative Workflow:** For longer tasks (full rewrites, chapter critiques), work in small chunks. After each segment, check in: 'Should I continue with the next paragraph, or does this give you what you need?'
+      3. **Be a Peer, Not a Bot:** Use a professional yet supportive tone. Avoid generic praise or preamble; be direct and specific about what works and what doesn't.
+      4. **Checking In:** End every response with a brief, relevant high-value question about a specific technique, stylistic choice, or craft decision the user is wrestling with.
+
+      ### YOUR TOOLS & BEHAVIORS
+      1. **Prose Diagnosis:** When given a passage, identify its strongest and weakest prose-level elements: sentence rhythm, word choice, voice consistency, clarity, imagery, dialogue flow, or paragraph transitions. Focus on the top 1-2 issues that would have the most impact if addressed.
+      2. **Format All Example Prose in Code Blocks:** ALWAYS wrap example prose in markdown code formatting to visually separate it from your explanatory text. Use single backticks for short phrases and triple backticks for longer examples. This is mandatory for all prose examples you provide.
+      3. **Lead with Examples:** When explaining techniques, open with a brief, concrete example (1-2 sentences) that demonstrates the principle in action, then unpack why it works. Frame examples clearly ('For instance,' 'Here's one approach:') and keep them scannable. The example illuminates the craft principle—it's a teaching tool, not prescribing what the user should write.
+      4. **Show, Then Ask:** If the user requests a rewrite or polish, provide a brief sample (1-2 paragraphs max) demonstrating a specific technique (e.g., tightening prose, varying rhythm, adding sensory detail). Explain what you changed and why, then ask: 'Does this direction work, or would you like me to try a different approach?'
+      5. **Empower the Writer:** Your job is to coach on craft and enable writing, not to write the story for them. When generating text (rewrites, examples), treat it as a teaching tool and encouragement. Keep it short, explain the technique, and check if the user wants to take over or needs more guidance.
+      6. **Focus on Your Role:** Do not focus on deep storytelling craft involving structure, plot, arcs, or narrative frameworks. Your domain is how those things can be best expressed and communicated in fiction & non-fiction prose.
+
+      ### YOUR CONTEXT
+      You are provided with a specific excerpt or document. Treat this as the 'Source of Truth' for the current moment.
+      - **Context Type:** {{contextType}}
+      - **Current Text:** {{storyText}}
+    description: System prompt for the default Assistant model (prose and craft editor). Placeholders {{contextType}} and {{storyText}} will be replaced with context.
+    multiline: true
+  - name: system_prompt_architect
+    prettyName: Architect Prompt
+    type: string
+    default: |-
+      You are an expert Story Architect and Narrative Strategist. Your specialization is the structural engineering of stories, whether fiction or non-fiction. You do not focus on prose or 'low-level' editing; your domain is the skeleton of the narrative: pacing, tension, structural frameworks, and the intentional delivery of payoffs. Keep your answers brief and conversational, only expanding when necessary.
+
+      ### THE ARCHITECT'S MANDATE
+      Your primary goal is to help users discover a story architecture that focuses raw goals and ideas into narrative gems. You have an exhaustive command of storytelling frameworks (e.g., Save the Cat, Hero's Journey, Fichtean Curve, The Snowflake Method, Story Grid, or Three-Act Structure), but you use them as diagnostic tools—not formulaic templates. By asking specific and relevant questions about theme, emotional goals, and narrative tension, you guide users toward understanding which frameworks, story arcs, and character arcs would amplify their vision. Adapt to the user's writing goals above all else, fully embracing adult & potentially offensive content that aligns with user goals.
+
+      ### INITIALIZATION PROTOCOL
+      **Important:** Make sure you understand the user's intent before providing any structural analysis or brainstorming, such as knowing something about genre/style/tone, together with a general direction or starting point. If these things are missing, start with an open-ended request for clarity: 'Do you have any specific goals or priorities in mind, such as genre or tone, or do you want to discover it as we go?'
+
+      ### YOUR TOOLS & BEHAVIORS
+      1. **Structural Breakdown:** When given an idea, identify its load-bearing pillars. Suggest 2-3 specific narrative structures that would best serve the core concept (e.g., 'This feels like a Nonlinear Mystery structure because...') and make clear which goals or priorities those ideas support.
+      2. **Tension Engineering:** Focus on the 'Hook, Build, and Payoff.' Analyze how to order events to ensure tension never sags and that the resolution feels earned.
+      3. **Illustrative, Not Prescriptive:** When explaining frameworks or techniques, you can use brief examples to make abstract concepts concrete—but keep them scannable (one sentence) and clearly framed as 'for instance' or 'imagine.' The example should illuminate the principle, not become the suggestion.
+      3. **Fleshing Out:** For undercooked ideas, help the user identify what the idea is reaching for. Ask what emotional experience or thematic question draws them to this concept. Then discuss what structural constraints (world-building rules, character limitations, external pressures) would intensify that core tension, rather than providing ready-made solutions.
+      4. **Professional detail:** Suggest opportunities for planting clever foreshadowing & red herrings, making every detail of the story structure intentional.
+      5. **Focus on Your Role:** Do not offer advice specific to the prose writing itself, such as 'show don't tell' or word choice. If the user provides examples, analyze them only as a series of events informing you on its structural integrity and its place in the larger outline.
+
+      ### INTERACTION GUIDELINES (Output Token Constraint: 1024)
+      1. **Architecture over Aesthetics:** Prioritize the 'Why' and 'Where' of a scene over the 'How' of the writing.
+      2. **Iterative Planning:** For complex outlines, present the high-level beats first (Acts/Milestones). Only dive into scene-by-scene breakdowns after the user approves the macro-structure (or if the user specifically requests it).
+      3. **Pathfinding:** If the user is stuck, resist offering solutions unless the user requests a concrete suggestion. Instead, ask diagnostic questions: What draws you to this idea? What would make this story feel satisfying to you? What trope or expectation are you trying to subvert? Use their answers to collaboratively identify which structural frameworks align with their vision.
+      4. **Checking In:** End every response with a relevant high-value question regarding the narrative's stakes, the protagonist's agency, or the structural pacing.
+
+      ### CONTEXT (e.g. full outline, draft excerpt, scattered notes)
+      You are provided with a specific excerpt or document. Treat this as the 'Source of Truth' for the current moment.
+      - **Context Type:** {{contextType}}
+      - **Current Text:** {{storyText}}
+    description: System prompt for the Architect model (structure and narrative strategist). Placeholders {{contextType}} and {{storyText}} will be replaced with context.
+    multiline: true
+  - name: custom_model_1_name
+    prettyName: Custom Model 1 Name
+    type: string
+    default: ""
+    description: Custom display name for instruction model 1.
+  - name: custom_model_1_prompt
+    prettyName: Custom Model 1 Prompt
+    type: string
+    default: ""
+    description: System prompt for custom instruction model 1.
+    multiline: true
+  - name: custom_model_2_name
+    prettyName: Custom Model 2 Name
+    type: string
+    default: ""
+    description: Custom display name for instruction model 2.
+  - name: custom_model_2_prompt
+    prettyName: Custom Model 2 Prompt
+    type: string
+    default: ""
+    description: System prompt for custom instruction model 2.
+    multiline: true
+  - name: custom_model_3_name
+    prettyName: Custom Model 3 Name
+    type: string
+    default: ""
+    description: Custom display name for instruction model 3.
+  - name: custom_model_3_prompt
+    prettyName: Custom Model 3 Prompt
+    type: string
+    default: ""
+    description: System prompt for custom instruction model 3.
+    multiline: true
+  - name: custom_model_4_name
+    prettyName: Custom Model 4 Name
+    type: string
+    default: ""
+    description: Custom display name for instruction model 4.
+  - name: custom_model_4_prompt
+    prettyName: Custom Model 4 Prompt
+    type: string
+    default: ""
+    description: System prompt for custom instruction model 4.
+    multiline: true
+  - name: custom_model_5_name
+    prettyName: Custom Model 5 Name
+    type: string
+    default: ""
+    description: Custom display name for instruction model 5.
+  - name: custom_model_5_prompt
+    prettyName: Custom Model 5 Prompt
+    type: string
+    default: ""
+    description: System prompt for custom instruction model 5.
+    multiline: true
+  - name: generate_instruction_prompt
+    prettyName: Instruct Prompt
+    type: string
+    default: |-
+      Using the current document/excerpt available to you and the information we've discussed in this conversation, provide a single concise instruction paragraph for how an LLM should continue/start the next section/scene based on the goals or ideas we've agreed on. You must efficiently include any necessary plot/story context that can act as a 'glue' to bridge the current state of the document with our discussed goals & ideas. Use the relevant (implied or stated) style & tone instructions, and the paragraph MUST start with 'Write' for clarity of purpose. If no style or tone was discussed, use the phrase 'professional genre fiction' as a default quality tag.
+    description: What the Instruct button asks for. The result is added to the end of the story as a { instruction }.
+    multiline: true
+  - name: chapter_break_token
+    prettyName: Chapter Break Token
+    type: string
+    default: "***"
+    description: "Token on its own line that separates chapters or scenes (default: ***)."
+  - name: chapter_title_bracketed
+    prettyName: Detect Bracketed Chapter Titles
+    type: boolean
+    default: true
+    description: "Detect bracketed headers like [ Chapter 1: Title ]. Bracketed metadata such as [ Author: X; Tags: Y ] is always ignored. Same rules as Chapter Linter."
+---*/
+
+// ChatGLM v2 (fork). Built from src/* + Editorial/shared/chapter-headers.ts (see scripts/build.js).
+
+// --- Shared Chapter Header Toolkit (Editorial scripts) ---
+// One parser for chapter headers, used by Chapter Linter and Markdown Manager.
+// Source of truth: Editorial/shared/chapter-headers.ts. Bundled into each script at build time,
+// so every name here is prefixed with `ch` / `CH_` to stay clear of script-level names.
+
+/** What a header introduces. 'title' = a header with no keyword ("# The Gathering", "[The Long Night]") */
+type ChapterKind = 'chapter' | 'title' | 'prologue' | 'epilogue' | 'interlude' | 'division';
+
+/** How the header was written in the source text */
+type HeaderSyntax = 'markdown' | 'bracket' | 'keyword';
+
+interface HeaderDetectionOptions {
+    /** 'auto' = markdown headings, [bracketed] titles and standalone "Chapter X" lines */
+    detectionMode: 'auto' | 'markdown_headings';
+    detectBracketedTitles: boolean;
+    /** Extra divider token recognised besides *** / --- / ___ */
+    breakToken?: string;
+    /** Only the breakToken counts as a divider (a lone --- stays text) */
+    onlyBreakToken?: boolean;
+}
+
+interface ParsedHeader {
+    isHeader: boolean;
+    syntax: HeaderSyntax | null;
+    /** Markdown heading level (1-6); 0 for bracket/keyword headers */
+    level: number;
+    kind: ChapterKind;
+    /** Label prefix exactly as written, minus trailing separator: "Chapter 3", "Part 1: Chapter 3", "IV", "" */
+    labelText: string;
+    /** Innermost keyword ("Chapter", "Part", "Prologue"); "" for bare numbers and titles */
+    keyword: string;
+    /** Innermost number as written ("IV", "8", "Twenty-One"); "" when there is none */
+    numberText: string;
+    /** Innermost number as a value, or null */
+    number: number | null;
+    /** Title text after the label: "The Dark Forest"; "" when the header is only a label */
+    cleanName: string;
+    /** The paragraph started with its own divider line ("***\n# Chapter 1") */
+    hasEmbeddedDivider: boolean;
+    /** Division written before the chapter on the same line: "Book 2" in "Book 2: Chapter 3"; "" otherwise */
+    divisionLabel: string;
+    /** That division's number (2 above), or null */
+    divisionNumber: number | null;
+}
+
+const CH_DEFAULT_DETECTION: HeaderDetectionOptions = { detectionMode: 'auto', detectBracketedTitles: true };
+
+// Separators allowed between a label and its title: ":", "-", en/em dash, ".", "|"
+const CH_SEP = "[:\\-\\u2013\\u2014.|]";
+// Spelled-out numbers, including hyphenated/spaced compounds ("Twenty-One", "Thirty Two")
+const CH_NUMBER_WORD = "(?:(?:twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)(?:[-\\s](?:one|two|three|four|five|six|seven|eight|nine))?"
+    + "|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen"
+    + "|ten|one|two|three|four|five|six|seven|eight|nine|zero|hundred)";
+// Only well-formed numerals, so words like "Mill" or "Mild" are never read as numbers
+const CH_ROMAN = "(?=[MDCLXVI])M{0,3}(?:CM|CD|D?C{0,3})(?:XC|XL|L?X{0,3})(?:IX|IV|V?I{0,3})";
+const CH_NUMBER = `(?:\\d+|${CH_ROMAN}|${CH_NUMBER_WORD})`;
+const CH_CHAPTER_KEYWORD = "(?:Chapter|Ch\\.?)";
+const CH_DIVISION_KEYWORD = "(?:Act|Book|Part|Volume|Section|Arc)";
+const CH_KEYWORD = `(?:${CH_CHAPTER_KEYWORD}|${CH_DIVISION_KEYWORD})`;
+const CH_LABEL_END = `(?=\\s|${CH_SEP}|,|$)`;
+
+// A plain line that is ONLY a label (optionally + separator + title). Anchored to the whole line
+// so prose like "Part of me wanted..." is never mistaken for a header.
+// Unnumbered special sections. Prelude counts as a prologue, Interlude sits between chapters.
+const CH_SPECIAL = "(?:Prologue|Prelude|Epilogue|Interlude)";
+// A comma only counts when another label follows it ("Part 1, Chapter 3"), never before prose.
+const CH_KEYWORD_LINE = new RegExp(
+    `^(?:${CH_KEYWORD}(?:\\s+${CH_NUMBER})?|${CH_SPECIAL})(?:\\s*${CH_SEP}.*|\\s*,\\s*(?:${CH_KEYWORD}|${CH_SPECIAL})${CH_LABEL_END}.*)?$`, 'i'
+);
+// Leading "Chapter 4", "Part II", "Ch. Twenty-One" (number optional). Groups: 1 keyword, 2 number
+const CH_LABEL_PREFIX = new RegExp(`^(${CH_KEYWORD})(?:\\s+(${CH_NUMBER}))?${CH_LABEL_END}`, 'i');
+const CH_DIVISION_TEST = new RegExp(`^${CH_DIVISION_KEYWORD}$`, 'i');
+// Keys that may label a bracketed header, e.g. [Chapter 3: ...], [Title: ...]
+// Stacked labels count too: [Book II - Chapter IV: Rain], [Part 1, Chapter 3: X]
+const CH_BRACKET_LABEL = `(?:${CH_KEYWORD}(?:\\s+${CH_NUMBER})?|Title|${CH_SPECIAL})`;
+const CH_BRACKET_KEY = new RegExp(`^${CH_BRACKET_LABEL}(?:\\s*(?:${CH_SEP}|,)\\s*${CH_BRACKET_LABEL})*$`, 'i');
+// A bare number with no keyword, e.g. the "1" in "[ 1: Sandor ]". Roman numerals must be
+// uppercase here so short words like "Mid" or "Ivy" aren't read as numbers.
+const CH_BARE_NUMBER_PATTERNS: RegExp[] = [
+    new RegExp(`^(\\d+|${CH_ROMAN})`),
+    new RegExp(`^(${CH_NUMBER_WORD})`, 'i')
+];
+const CH_MAX_BRACKET_LENGTH = 100;
+
+const CH_WORD_VALUES: Record<string, number> = {
+    zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
+    eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17,
+    eighteen: 18, nineteen: 19, twenty: 20, thirty: 30, forty: 40, fifty: 50, sixty: 60,
+    seventy: 70, eighty: 80, ninety: 90, hundred: 100
+};
+const CH_ROMAN_VALUES: Record<string, number> = { I: 1, V: 5, X: 10, L: 50, C: 100, D: 500, M: 1000 };
+const CH_ROMAN_TABLE: [number, string][] = [
+    [1000, "M"], [900, "CM"], [500, "D"], [400, "CD"], [100, "C"], [90, "XC"],
+    [50, "L"], [40, "XL"], [10, "X"], [9, "IX"], [5, "V"], [4, "IV"], [1, "I"]
+];
+
+function chToRoman(num: number): string {
+    if (num <= 0 || num > 3999) return String(num);
+    let result = "";
+    let rem = num;
+    for (const [val, roman] of CH_ROMAN_TABLE) {
+        while (rem >= val) {
+            result += roman;
+            rem -= val;
+        }
+    }
+    return result;
+}
+
+/** "12" -> 12, "IV"/"iv" -> 4, "Twenty-One" -> 21. Returns null for anything else. */
+function chParseNumber(token: string): number | null {
+    const t = (token || "").trim();
+    if (!t) return null;
+    if (/^\d+$/.test(t)) return parseInt(t, 10);
+    if (new RegExp(`^${CH_ROMAN}$`, 'i').test(t)) {
+        const upper = t.toUpperCase();
+        let total = 0;
+        let prev = 0;
+        for (let i = upper.length - 1; i >= 0; i--) {
+            const val = CH_ROMAN_VALUES[upper[i]] || 0;
+            if (val < prev) {
+                total -= val;
+            } else {
+                total += val;
+                prev = val;
+            }
+        }
+        return total > 0 ? total : null;
+    }
+    const words = t.toLowerCase().split(/[-\s]+/).filter((w: string) => w.length > 0);
+    if (words.length === 0 || words.length > 2) return null;
+    let sum = 0;
+    for (const w of words) {
+        const v = CH_WORD_VALUES[w];
+        if (v === undefined) return null;
+        sum += v;
+    }
+    return sum;
+}
+
+function chIsDivider(text: string, customToken?: string, onlyCustom: boolean = false): boolean {
+    if (!text) return false;
+    const t = text.trim();
+    if (!t) return false;
+    if (customToken && customToken.trim() && t === customToken.trim()) return true;
+    if (onlyCustom && customToken && customToken.trim()) return false;
+    if (t === "– – –" || t === "— — —") return true;
+    return /^(?:\*\s*){3,}$/.test(t) || /^(?:-\s*){3,}$/.test(t) || /^(?:_\s*){3,}$/.test(t);
+}
+
+// Length of a leading bare number (plus separator) when it ends the text or is followed by a
+// separator; 0 otherwise, so a title like "1984" or "Ivy" is left alone.
+function chMatchBareNumberPrefix(text: string, requireWhole: boolean = false): number {
+    for (const pattern of CH_BARE_NUMBER_PATTERNS) {
+        const m = text.match(pattern);
+        if (!m || !m[0]) continue;
+        const after = text.slice(m[0].length);
+        if (requireWhole) {
+            if (after.trim() === "") return text.length;
+            continue;
+        }
+        const sep = after.match(new RegExp(`^\\s*(?:${CH_SEP}\\s*|$)`));
+        if (sep) return m[0].length + sep[0].length;
+    }
+    return 0;
+}
+
+/**
+ * Inner text of a bracketed header, or null when the brackets hold something else
+ * (NovelAI author's notes / ATTG metadata such as "[ Author: X; Tags: Y ]").
+ */
+function chExtractBracketBody(text: string): string | null {
+    const m = text.match(/^\[\s*([^\[\]\n]+?)\s*\]$/);
+    if (!m) return null;
+    const inner = m[1];
+    if (inner.length > CH_MAX_BRACKET_LENGTH || inner.includes(";")) return null;
+    const keyMatch = inner.match(/^([^:]+?)\s*:/);
+    if (keyMatch) {
+        const key = keyMatch[1].trim();
+        if (!CH_BRACKET_KEY.test(key) && !chMatchBareNumberPrefix(key, true)) return null;
+    } else if (/[.!?\u2026]["'\u201D\u2019]?$/.test(inner) && !CH_KEYWORD_LINE.test(inner)) {
+        // "[He looked away.]" is an aside, not a title. "[Chapter 7.]" still counts.
+        return null;
+    }
+    return inner;
+}
+
+/** "Prologue: The Fall" -> { kind: 'prologue', keyword: 'Prologue', rest: 'The Fall' } */
+function chMatchSpecial(text: string): { kind: ChapterKind; keyword: string; rest: string } | null {
+    const m = text.match(new RegExp(`^(${CH_SPECIAL})${CH_LABEL_END}\\s*${CH_SEP}?\\s*(.*)$`, 'i'));
+    if (!m) return null;
+    const lower = m[1].toLowerCase();
+    const kind: ChapterKind = lower === 'epilogue' ? 'epilogue' : lower === 'interlude' ? 'interlude' : 'prologue';
+    return { kind, keyword: m[1], rest: m[2] };
+}
+
+/**
+ * Fills in chapter numbers the way readers expect: explicit numbers are kept, an unnumbered
+ * chapter gets the previous number + 1 (so an untitled chapter after "Chapter 5" is 6), and
+ * the first unnumbered chapter is 1. Prologue / epilogue / interlude / division get null.
+ */
+function chFillNumbers(headers: (ParsedHeader | null)[]): (number | null)[] {
+    let last = 0;
+    return headers.map((h: ParsedHeader | null) => {
+        if (!h || !h.isHeader) return null;
+        if (h.kind !== 'chapter' && h.kind !== 'title') return null;
+        const n = h.number !== null ? h.number : last + 1;
+        last = n;
+        return n;
+    });
+}
+
+/**
+ * Which Book/Part each header sits in: its own inline prefix ("Book 2: Chapter 1"), else the
+ * last standalone division header above it ("Book 2:" on its own line). "" outside any division.
+ * Division headers themselves get their own label.
+ */
+function chDivisionContext(headers: (ParsedHeader | null)[]): string[] {
+    let current = "";
+    return headers.map((h: ParsedHeader | null) => {
+        if (!h || !h.isHeader) return current;
+        if (h.kind === 'division') {
+            current = h.labelText.replace(new RegExp(`\\s*(?:${CH_SEP}|,)\\s*$`), '').trim();
+            return current;
+        }
+        if (h.divisionLabel) {
+            current = h.divisionLabel.replace(new RegExp(`\\s*(?:${CH_SEP}|,)\\s*$`), '').trim();
+        }
+        return current;
+    });
+}
+
+function chNotHeader(): ParsedHeader {
+    return {
+        isHeader: false, syntax: null, level: 0, kind: 'title', labelText: "", keyword: "",
+        numberText: "", number: null, cleanName: "", hasEmbeddedDivider: false,
+        divisionLabel: "", divisionNumber: null
+    };
+}
+
+/**
+ * Parses one paragraph/line. Returns isHeader=false for prose, dividers, metadata brackets
+ * and anything spanning several lines.
+ */
+function chParseHeader(raw: string, options: HeaderDetectionOptions = CH_DEFAULT_DETECTION): ParsedHeader {
+    const result = chNotHeader();
+    if (!raw) return result;
+    let working = raw.trim();
+    if (!working || chIsDivider(working, options.breakToken, options.onlyBreakToken)) return result;
+
+    // Allow a divider sharing the paragraph on its own first line, e.g. "***\n# Chapter 1"
+    const newlineIdx = working.indexOf("\n");
+    if (newlineIdx !== -1 && chIsDivider(working.slice(0, newlineIdx), options.breakToken, options.onlyBreakToken)) {
+        working = working.slice(newlineIdx + 1).trim();
+        result.hasEmbeddedDivider = true;
+    }
+    if (!working || working.includes("\n")) return chNotHeader();
+
+    let body: string | null = null;
+    const mdMatch = working.match(/^(#{1,6})\s+(.+)$/);
+    if (mdMatch) {
+        body = mdMatch[2];
+        result.syntax = 'markdown';
+        result.level = mdMatch[1].length;
+    } else if (options.detectionMode === 'auto') {
+        if (working.startsWith("[")) {
+            if (options.detectBracketedTitles) {
+                body = chExtractBracketBody(working);
+                result.syntax = 'bracket';
+            }
+        } else {
+            // Keyword lines, optionally wrapped in emphasis: "Chapter IV: Echoes", "**Part Two**"
+            const emphasis = working.match(/^(\*\*|__|\*|_)(.+)\1$/);
+            const candidate = (emphasis ? emphasis[2] : working).trim();
+            if (CH_KEYWORD_LINE.test(candidate)) {
+                body = candidate;
+                result.syntax = 'keyword';
+            }
+        }
+    }
+    if (body === null) return chNotHeader();
+    result.isHeader = true;
+
+    const full = body.trim();
+    let rest = full.replace(/^Title\s*:\s*/i, '');
+    let labelEnd = 0; // characters of `rest` (pre-strip) that belong to the label
+
+    const special = chMatchSpecial(rest);
+    if (special) {
+        result.kind = special.kind;
+        result.keyword = special.keyword;
+        result.labelText = special.keyword;
+        rest = special.rest;
+    } else {
+        // Strip stacked labels ("Part 1: Chapter 3: Title" -> "Title"). A bare keyword is only
+        // stripped when followed by a separator or nothing, so "# Part of the Plan" keeps its words.
+        const original = rest;
+        let consumed = 0;
+        let strippedLabel = false;
+        let label = rest.match(CH_LABEL_PREFIX);
+        while (label) {
+            let after = rest.slice(label[0].length);
+            let numberText = label[2] || "";
+            let labelLength = label[0].length;
+            if (!numberText) {
+                const sep = after.match(new RegExp(`^\\s*${CH_SEP}\\s*`));
+                if (!sep && after.trim() !== "") break;
+                // "Chapter: 3" / "Book - II": the number comes after the separator
+                if (sep) {
+                    const tail = after.slice(sep[0].length);
+                    const bareLen = chMatchBareNumberPrefix(tail);
+                    if (bareLen > 0) {
+                        numberText = tail.slice(0, bareLen).replace(new RegExp(`\\s*(?:${CH_SEP}|,)?\\s*$`), '');
+                        labelLength += sep[0].length + numberText.length;
+                        after = rest.slice(labelLength);
+                    }
+                }
+            }
+            const isDivision = CH_DIVISION_TEST.test(label[1]);
+            // Remember a division written before the chapter on the same line ("Book 2: Chapter 3")
+            if (!isDivision && result.kind === 'division' && strippedLabel) {
+                result.divisionLabel = original.slice(0, labelEnd).trim();
+                result.divisionNumber = result.numberText ? chParseNumber(result.numberText) : null;
+            }
+            result.keyword = label[1];
+            result.numberText = numberText;
+            result.kind = isDivision ? 'division' : 'chapter';
+            consumed += labelLength;
+            labelEnd = consumed;
+            // A comma also separates stacked labels: "Part 1, Chapter 3"
+            const sepMatch = after.match(new RegExp(`^\\s*(?:${CH_SEP}|,)?\\s*`));
+            const sepLen = sepMatch ? sepMatch[0].length : 0;
+            consumed += sepLen;
+            rest = after.slice(sepLen);
+            strippedLabel = true;
+            label = rest.match(CH_LABEL_PREFIX);
+        }
+        // "Act II: Prologue" / "Part 1, Interlude": a special section inside a division
+        const innerSpecial = strippedLabel && result.kind === 'division' ? chMatchSpecial(rest) : null;
+        if (innerSpecial) {
+            result.kind = innerSpecial.kind;
+            result.keyword = innerSpecial.keyword;
+            result.numberText = "";
+            labelEnd = consumed + (rest.length - innerSpecial.rest.length);
+            result.labelText = original.slice(0, labelEnd).replace(new RegExp(`\\s*${CH_SEP}?\\s*$`), '').trim();
+            rest = innerSpecial.rest;
+        } else if (strippedLabel) {
+            result.labelText = original.slice(0, labelEnd).trim();
+        } else {
+            // Keyword-less number left by imports: "1: Sandor" -> "Sandor", "12" -> "".
+            // Skipped after a real label so a numeric title ("Chapter 3: 1984") survives.
+            const bareLen = chMatchBareNumberPrefix(rest);
+            if (bareLen > 0) {
+                const token = rest.slice(0, bareLen).replace(new RegExp(`\\s*${CH_SEP}?\\s*$`), '');
+                result.kind = 'chapter';
+                result.numberText = token;
+                result.labelText = token;
+                rest = rest.slice(bareLen);
+            } else {
+                result.kind = 'title';
+            }
+        }
+    }
+
+    result.number = result.numberText ? chParseNumber(result.numberText) : null;
+    result.cleanName = rest
+        .replace(new RegExp(`^${CH_SEP}\\s*`), '')
+        .replace(new RegExp(`\\s*${CH_SEP}$`), '')
+        .replace(/^["'\[\]]+|["'\[\]]+$/g, '')
+        .trim();
+    // "[Title: X]" or "# X" with nothing left: keep the header, it is just untitled
+    return result;
+}
+
+/**
+ * Human-readable title for a parsed header: "Chapter 3: The Fall", "Prologue", "Part 2: Return",
+ * "The Gathering". Bare numbers ("[ 1: Sandor ]") are shown as "Chapter 1: Sandor".
+ */
+function chDisplayTitle(h: ParsedHeader): string {
+    if (!h.isHeader) return "";
+    let label = h.labelText;
+    if (h.kind === 'chapter' && !h.keyword && h.numberText) {
+        label = `Chapter ${h.numberText}`;
+    }
+    if (label && h.cleanName) return `${label}: ${h.cleanName}`;
+    return label || h.cleanName;
+}
+
+/** Normalised text for comparing titles: lowercase, punctuation and extra spaces removed */
+function chNormalizeTitle(text: string): string {
+    // Only ASCII punctuation is dropped, so accented and non-Latin titles still compare
+    return (text || "").toLowerCase().replace(/[!-\/:-@\[-`{-~–—‘’“”]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Removes markdown emphasis (*x*, **x**, ***x***, _x_, __x__) without touching scene dividers,
+ * bullet markers, or underscores inside words (snake_case, file_names).
+ */
+function chStripEmphasis(line: string, breakToken?: string): string {
+    if (!line || chIsDivider(line, breakToken)) return line;
+    let out = line;
+    out = out.replace(/\*\*\*(\S(?:[^*\n]*?\S)?)\*\*\*/g, "$1");
+    out = out.replace(/\*\*(\S(?:[^*\n]*?\S)?)\*\*/g, "$1");
+    out = out.replace(/\*(\S(?:[^*\n]*?\S)?)\*/g, "$1");
+    // Underscore emphasis only counts at word boundaries
+    out = out.replace(/(^|[^A-Za-z0-9_])___(\S(?:[^_\n]*?\S)?)___(?![A-Za-z0-9_])/g, "$1$2");
+    out = out.replace(/(^|[^A-Za-z0-9_])__(\S(?:[^_\n]*?\S)?)__(?![A-Za-z0-9_])/g, "$1$2");
+    out = out.replace(/(^|[^A-Za-z0-9_])_(\S(?:[^_\n]*?\S)?)_(?![A-Za-z0-9_])/g, "$1$2");
+    return out;
+}
+
+/** Word count without allocating large arrays */
+function chCountWords(str: string): number {
+    if (!str) return 0;
+    let count = 0;
+    let inWord = false;
+    for (let i = 0; i < str.length; i++) {
+        if (str.charCodeAt(i) > 32) {
+            if (!inWord) {
+                count++;
+                inWord = true;
+            }
+        } else {
+            inWord = false;
+        }
+    }
+    return count;
+}
+
+// --- ChatGLM Types ---
+// Header parsing types (ParsedHeader, ChapterKind, HeaderDetectionOptions) come from Editorial/shared/chapter-headers.ts
+
+type ChatRole = 'user' | 'assistant';
+
+interface ChatMessage {
+    role: ChatRole;
+    content: string;
+    /** Model persona that wrote an assistant message */
+    modelDisplayName?: string;
+    modelId?: string;
+}
+
+interface ResponseVersion {
+    content: string;
+    modelDisplayName: string;
+    modelId: string;
+}
+
+/** Redo alternatives for one assistant message (kept for this session only) */
+interface ResponseAlternatives {
+    versions: ResponseVersion[];
+    activeVersionIndex: number;
+}
+
+interface ChatModel {
+    id: string;
+    name: string;
+}
+
+type ChapterSectionKind = ChapterKind | 'opening';
+
+/** One chapter found in the story document */
+interface DetectedChapter {
+    /** Stable identity: the header's section id (first section id for untitled text) */
+    key: number;
+    index: number;
+    number: number | null;
+    /** Full title, e.g. "Chapter 3: The Fall" or "Prologue: The Awakening" */
+    title: string;
+    /** Short label, e.g. "Ch. 3", "Prologue", "Part 2" */
+    label: string;
+    /** Header line + body, paragraphs separated by blank lines */
+    text: string;
+    kind: ChapterSectionKind;
+    isPrologue: boolean;
+    isEpilogue: boolean;
+}
+
+/** The story text the AI will see, before fitting it to the token budget */
+interface StoryContext {
+    text: string;
+    contextType: string;
+    isSelection: boolean;
+    isChapter: boolean;
+    hasPreviousContext: boolean;
+    chapterTitle: string | null;
+    hasLorebook: boolean;
+    lorebookCount: number;
+    lorebookText: string;
+    baseStoryText: string;
+}
+
+/** A ready-to-send prompt, or the reason it can't be sent */
+interface PromptPlan {
+    ok: boolean;
+    reason: string;
+    messages: Message[];
+    contextType: string;
+    /** Story tokens before / after fitting */
+    storyTokens: number;
+    keptStoryTokens: number;
+    /** Share of the story context that fits (100 = all of it) */
+    percentage: number;
+}
+
+type ChatDropdown = 'none' | 'chapter' | 'lore' | 'model';
+
+interface ChatState {
+    history: ChatMessage[];
+    alternatives: Record<number, ResponseAlternatives>;
+    selectedContextText: string | null;
+    generating: boolean;
+    /** Stop was pressed: ignore further streamed text until the run ends */
+    stopRequested: boolean;
+    signal: CancellationSignal | null;
+    hasCutOffResponse: boolean;
+
+    modelId: string;
+    modelName: string;
+    models: ChatModel[];
+    activePrompt: string;
+
+    chapterKeys: number[];
+    usePreviousContext: boolean;
+    chapters: DetectedChapter[];
+    breakToken: string;
+    detectBracketedTitles: boolean;
+
+    loreIds: string[];
+    loreEntries: LorebookEntry[];
+    loreCategories: LorebookCategory[];
+
+    dropdown: ChatDropdown;
+    status: { percentage: number; ok: boolean; reason: string };
+    docSignature: string;
+    pollStarted: boolean;
+}
+
+// --- ChatGLM State & Per-Story Persistence ---
+
+const MODEL_NAME = "glm-4-6";
+const CHAT_OUTPUT_TOKENS = 1024;
+const SIDE_OUTPUT_TOKENS = 512;
+/** Room left for chat-format tokens the tokenizer doesn't see (role markers etc.) */
+const PROMPT_SAFETY_TOKENS = 96;
+const MESSAGE_OVERHEAD_TOKENS = 6;
+/** Waits longer than this are reported instead of waited out */
+const MAX_BUDGET_WAIT_MS = 10000;
+
+const PANEL_ID = "story-chat-panel";
+const INPUT_KEY = "chat-input-value";
+const STATUS_ID = "chat-status";
+
+/** Per-story keys (api.v1.storyStorage) */
+const STORY_KEYS = {
+    history: "chat-history",
+    chapterKeys: "selected-chapter-keys",
+    loreIds: "selected-lorebook-entry-ids",
+    usePrev: "use-previous-context",
+    migrated: "chatglm-per-story-v1"
+} as const;
+
+/** Script-wide keys (api.v1.storage) */
+const MODEL_KEY = "selected-model-id";
+/** v2.0 kept everything script-wide under these names */
+const LEGACY_KEYS = ["chat-history", "selected-chapter-indices", "selected-chapter-index", "use-previous-context", "selected-lorebook-entry-ids"];
+
+const chat: ChatState = {
+    history: [],
+    alternatives: {},
+    selectedContextText: null,
+    generating: false,
+    stopRequested: false,
+    signal: null,
+    hasCutOffResponse: false,
+
+    modelId: "assistant",
+    modelName: "Assistant",
+    models: [{ id: "assistant", name: "Assistant" }, { id: "architect", name: "Architect" }],
+    activePrompt: "",
+
+    chapterKeys: [],
+    usePreviousContext: false,
+    chapters: [],
+    breakToken: "***",
+    detectBracketedTitles: true,
+
+    loreIds: [],
+    loreEntries: [],
+    loreCategories: [],
+
+    dropdown: 'none',
+    status: { percentage: 100, ok: true, reason: "" },
+    docSignature: "",
+    pollStarted: false
+};
+
+function formatError(err: any): string {
+    if (!err) return "Unknown error";
+    if (typeof err === "string") return err;
+    if (err.message) return String(err.message);
+    try {
+        return JSON.stringify(err);
+    } catch {
+        return String(err);
+    }
+}
+
+function isChatMessage(value: any): value is ChatMessage {
+    return !!value && (value.role === "user" || value.role === "assistant") && typeof value.content === "string";
+}
+
+/** Storage values written by v2.0 were JSON strings; v2.1 stores plain values */
+function parseStored(value: any): any {
+    if (typeof value !== "string") return value;
+    try {
+        return JSON.parse(value);
+    } catch {
+        return undefined;
+    }
+}
+
+async function saveChatHistory(): Promise<void> {
+    try {
+        await api.v1.storyStorage.set(STORY_KEYS.history, chat.history);
+    } catch (err: any) {
+        api.v1.log("ChatGLM: could not save chat history: " + formatError(err));
+    }
+}
+
+async function saveSelections(): Promise<void> {
+    try {
+        await api.v1.storyStorage.set(STORY_KEYS.chapterKeys, chat.chapterKeys);
+        await api.v1.storyStorage.set(STORY_KEYS.loreIds, chat.loreIds);
+        await api.v1.storyStorage.set(STORY_KEYS.usePrev, chat.usePreviousContext);
+    } catch (err: any) {
+        api.v1.log("ChatGLM: could not save selections: " + formatError(err));
+    }
+}
+
+/**
+ * v2.0 saved the chat script-wide, so every story showed the same chat. The first story opened
+ * after updating adopts that chat, and the script-wide copy is removed so no other story gets it.
+ * Chapter and lorebook picks belonged to whichever story they were made in, so they are dropped.
+ */
+async function migrateLegacyChat(): Promise<void> {
+    try {
+        if (await api.v1.storyStorage.get(STORY_KEYS.migrated)) return;
+        const legacyHistory = parseStored(await api.v1.storage.get("chat-history"));
+        const existing = await api.v1.storyStorage.get(STORY_KEYS.history);
+        if (Array.isArray(legacyHistory) && legacyHistory.length > 0 && !(Array.isArray(existing) && existing.length > 0)) {
+            await api.v1.storyStorage.set(STORY_KEYS.history, legacyHistory.filter(isChatMessage));
+            const legacyPrev = await api.v1.storage.get("use-previous-context");
+            if (typeof legacyPrev === "boolean") await api.v1.storyStorage.set(STORY_KEYS.usePrev, legacyPrev);
+            api.v1.log("ChatGLM: moved the previous script-wide chat into this story.");
+        }
+        for (const key of LEGACY_KEYS) {
+            if (await api.v1.storage.has(key)) await api.v1.storage.remove(key);
+        }
+        await api.v1.storyStorage.set(STORY_KEYS.migrated, true);
+    } catch (err: any) {
+        api.v1.log("ChatGLM: legacy chat migration failed: " + formatError(err));
+    }
+}
+
+async function loadPersistedState(): Promise<void> {
+    try {
+        const savedModel = await api.v1.storage.get(MODEL_KEY);
+        if (typeof savedModel === "string" && savedModel) chat.modelId = savedModel;
+    } catch {
+        // keep default model
+    }
+
+    await migrateLegacyChat();
+
+    try {
+        const history = parseStored(await api.v1.storyStorage.get(STORY_KEYS.history));
+        chat.history = Array.isArray(history) ? history.filter(isChatMessage) : [];
+        const keys = await api.v1.storyStorage.get(STORY_KEYS.chapterKeys);
+        chat.chapterKeys = Array.isArray(keys) ? keys.filter((k: any) => typeof k === "number") : [];
+        const lore = await api.v1.storyStorage.get(STORY_KEYS.loreIds);
+        chat.loreIds = Array.isArray(lore) ? lore.filter((id: any) => typeof id === "string") : [];
+        const prev = await api.v1.storyStorage.get(STORY_KEYS.usePrev);
+        chat.usePreviousContext = prev === true;
+    } catch (err: any) {
+        api.v1.log("ChatGLM: could not load this story's chat: " + formatError(err));
+    }
+
+    const last = chat.history[chat.history.length - 1];
+    chat.hasCutOffResponse = !!last && last.role === "assistant" && isResponseLikelyCutOff(last.content);
+}
+
+// --- ChatGLM Prompts & Personas ---
+// Prompt text is unchanged from v2.0; only the code around it is typed.
+
+const SYSTEM_PROMPT_DEF = `You are an expert Writing Assistant and Professional Editor specializing in prose craft. Your focus is the sentence-level execution of writing: voice, rhythm, clarity, word choice, imagery, and the technical skills that make ideas land on the page with impact. You do not go into story structure and plot unless specifically asked. Your expertise is *how the writing lands*, not what should happen in the narrative. Keep responses brief and conversational, expanding only when its useful.
+
+### THE EDITOR'S MANDATE
+  Your primary goal is to help users master the technical craft of prose. You have deep expertise in sentence construction, rhythm and cadence, word precision, voice consistency, imagery, sensory detail, dialogue naturalism, and the micro-level decisions that separate competent writing from compelling writing. Use your knowledge as a diagnostic tool—identify what's working and what's not at the prose level, then guide users toward understanding *why* and *how* to improve. Adapt to the user's writing goals above all else, fully embracing adult & potentially offensive content that aligns with user goals.
+
+### INTERACTION GUIDELINES (Output Token Constraint: 1024)
+1. **Craft over Coverage:** Prioritize the 'Why' and 'How' of prose techniques over exhaustive lists. Ground each insight with a quick example before explaining the principle—one well-demonstrated insight is worth more than ten surface-level notes.
+2. **Iterative Workflow:** For longer tasks (full rewrites, chapter critiques), work in small chunks. After each segment, check in: 'Should I continue with the next paragraph, or does this give you what you need?'
+3. **Be a Peer, Not a Bot:** Use a professional yet supportive tone. Avoid generic praise or preamble; be direct and specific about what works and what doesn't.
+4. **Checking In:** End every response with a brief, relevant high-value question about a specific technique, stylistic choice, or craft decision the user is wrestling with.
+
+### YOUR TOOLS & BEHAVIORS
+1. **Prose Diagnosis:** When given a passage, identify its strongest and weakest prose-level elements: sentence rhythm, word choice, voice consistency, clarity, imagery, dialogue flow, or paragraph transitions. Focus on the top 1-2 issues that would have the most impact if addressed.
+2. **Format All Example Prose in Code Blocks:** ALWAYS wrap example prose in markdown code formatting to visually separate it from your explanatory text. Use single backticks for short phrases and triple backticks for longer examples. This is mandatory for all prose examples you provide.
+3. **Lead with Examples:** When explaining techniques, open with a brief, concrete example (1-2 sentences) that demonstrates the principle in action, then unpack why it works. Frame examples clearly ('For instance,' 'Here's one approach:') and keep them scannable. The example illuminates the craft principle—it's a teaching tool, not prescribing what the user should write.
+4. **Show, Then Ask:** If the user requests a rewrite or polish, provide a brief sample (1-2 paragraphs max) demonstrating a specific technique (e.g., tightening prose, varying rhythm, adding sensory detail). Explain what you changed and why, then ask: 'Does this direction work, or would you like me to try a different approach?'
+5. **Empower the Writer:** Your job is to coach on craft and enable writing, not to write the story for them. When generating text (rewrites, examples), treat it as a teaching tool and encouragement. Keep it short, explain the technique, and check if the user wants to take over or needs more guidance.
+6. **Focus on Your Role:** Do not focus on deep storytelling craft involving structure, plot, arcs, or narrative frameworks. Your domain is how those things can be best expressed and communicated in fiction & non-fiction prose.
+
+### YOUR CONTEXT
+You are provided with a specific excerpt or document. Treat this as the 'Source of Truth' for the current moment.
+- **Context Type:** {{contextType}}
+- **Current Text:** {{storyText}}`;
+
+// ----------------------------------------------------------------------------
+
+const SYSTEM_PROMPT_PLAN = `You are an expert Story Architect and Narrative Strategist. Your specialization is the structural engineering of stories, whether fiction or non-fiction. You do not focus on prose or 'low-level' editing; your domain is the skeleton of the narrative: pacing, tension, structural frameworks, and the intentional delivery of payoffs. Keep your answers brief and conversational, only expanding when necessary.
+
+### THE ARCHITECT'S MANDATE
+Your primary goal is to help users discover a story architecture that focuses raw goals and ideas into narrative gems. You have an exhaustive command of storytelling frameworks (e.g., Save the Cat, Hero's Journey, Fichtean Curve, The Snowflake Method, Story Grid, or Three-Act Structure), but you use them as diagnostic tools—not formulaic templates. By asking specific and relevant questions about theme, emotional goals, and narrative tension, you guide users toward understanding which frameworks, story arcs, and character arcs would amplify their vision. Adapt to the user's writing goals above all else, fully embracing adult & potentially offensive content that aligns with user goals.
+
+### INITIALIZATION PROTOCOL
+**Important:** Make sure you understand the user's intent before providing any structural analysis or brainstorming, such as knowing something about genre/style/tone, together with a general direction or starting point. If these things are missing, start with an open-ended request for clarity: 'Do you have any specific goals or priorities in mind, such as genre or tone, or do you want to discover it as we go?'
+
+### YOUR TOOLS & BEHAVIORS
+1. **Structural Breakdown:** When given an idea, identify its load-bearing pillars. Suggest 2-3 specific narrative structures that would best serve the core concept (e.g., 'This feels like a Nonlinear Mystery structure because...') and make clear which goals or priorities those ideas support.
+2. **Tension Engineering:** Focus on the 'Hook, Build, and Payoff.' Analyze how to order events to ensure tension never sags and that the resolution feels earned.
+3. **Illustrative, Not Prescriptive:** When explaining frameworks or techniques, you can use brief examples to make abstract concepts concrete—but keep them scannable (one sentence) and clearly framed as 'for instance' or 'imagine.' The example should illuminate the principle, not become the suggestion.
+3. **Fleshing Out:** For undercooked ideas, help the user identify what the idea is reaching for. Ask what emotional experience or thematic question draws them to this concept. Then discuss what structural constraints (world-building rules, character limitations, external pressures) would intensify that core tension, rather than providing ready-made solutions.
+4. **Professional detail:** Suggest opportunities for planting clever foreshadowing & red herrings, making every detail of the story structure intentional.
+5. **Focus on Your Role:** Do not offer advice specific to the prose writing itself, such as 'show don't tell' or word choice. If the user provides examples, analyze them only as a series of events informing you on its structural integrity and its place in the larger outline.
+
+### INTERACTION GUIDELINES (Output Token Constraint: 1024)
+1. **Architecture over Aesthetics:** Prioritize the 'Why' and 'Where' of a scene over the 'How' of the writing.
+2. **Iterative Planning:** For complex outlines, present the high-level beats first (Acts/Milestones). Only dive into scene-by-scene breakdowns after the user approves the macro-structure (or if the user specifically requests it).
+3. **Pathfinding:** If the user is stuck, resist offering solutions unless the user requests a concrete suggestion. Instead, ask diagnostic questions: What draws you to this idea? What would make this story feel satisfying to you? What trope or expectation are you trying to subvert? Use their answers to collaboratively identify which structural frameworks align with their vision.
+4. **Checking In:** End every response with a relevant high-value question regarding the narrative's stakes, the protagonist's agency, or the structural pacing.
+
+### CONTEXT (e.g. full outline, draft excerpt, scattered notes)
+You are provided with a specific excerpt or document. Treat this as the 'Source of Truth' for the current moment.
+- **Context Type:** {{contextType}}
+- **Current Text:** {{storyText}}`;
+
+// ----------------------------------------------------------------------------
+
+// System Prompts - Extra Features
+const COMPACT_SUMMARY_PROMPT = "Please create a compact summary of the conversation so far, excluding any meaningless parts such as this request to summarize. The purpose is to remember all the important takeaways of our conversation so that we can continue where we left off. Explain the most meaningful content we've discussed concisely, if any, capturing the broad strokes briefly, but the most important nuances more specifically and in detail. Go in chronological order, and make sure to pick up any unique keywords or names that seem important to not forget, putting them in context. If very little (or nothing) was meaningful, a single sentence explanation is enough. Minimum 1 sentence, 150 words max!";
+const DEFAULT_INSTRUCT_PROMPT = "Using the current document/excerpt available to you and the information we've discussed in this conversation, provide a single concise instruction paragraph for how an LLM should continue/start the next section/scene based on the goals or ideas we've agreed on. You must efficiently include any necessary plot/story context that can act as a 'glue' to bridge the current state of the document with our discussed goals & ideas. Use the relevant (implied or stated) style & tone instructions, and the paragraph MUST start with 'Write' for clarity of purpose. If no style or tone was discussed, use the phrase 'professional genre fiction' as a default quality tag.";
+
+/** Appended to custom prompts that don't use the {{storyText}} placeholder */
+const DEFAULT_CONTEXT_BLOCK = `\n\n### CONTEXT (e.g. full outline, draft excerpt, scattered notes)\nYou are provided with a specific excerpt or document. Treat this as the 'Source of Truth' for the current moment.\n- **Context Type:** {{contextType}}\n- **Current Text:** {{storyText}}`;
+
+/** Assistant, Architect, plus any custom personas filled in under Config */
+async function getAvailableModels(): Promise<ChatModel[]> {
+    const models: ChatModel[] = [
+        { id: "assistant", name: "Assistant" },
+        { id: "architect", name: "Architect" }
+    ];
+    for (let i = 1; i <= 5; i++) {
+        try {
+            const name = await api.v1.config.get(`custom_model_${i}_name`);
+            const prompt = await api.v1.config.get(`custom_model_${i}_prompt`);
+            if (typeof name === "string" && name.trim() && typeof prompt === "string" && prompt.trim()) {
+                models.push({ id: `custom_${i}`, name: name.trim() });
+            }
+        } catch {
+            // skip unreadable custom slot
+        }
+    }
+    chat.models = models;
+    return models;
+}
+
+async function readConfigText(name: string): Promise<string> {
+    try {
+        const value = await api.v1.config.get(name);
+        return typeof value === "string" && value.trim() ? value : "";
+    } catch {
+        return "";
+    }
+}
+
+async function getModelPrompt(modelId: string): Promise<string> {
+    if (modelId === "assistant") return (await readConfigText("system_prompt_assistant")) || SYSTEM_PROMPT_DEF;
+    if (modelId === "architect") return (await readConfigText("system_prompt_architect")) || SYSTEM_PROMPT_PLAN;
+    if (modelId.startsWith("custom_")) {
+        const custom = await readConfigText(`custom_model_${modelId.split("_")[1]}_prompt`);
+        if (custom) return custom;
+    }
+    return SYSTEM_PROMPT_DEF;
+}
+
+/** Re-reads the selected persona's name and prompt from Config */
+async function refreshActiveModel(): Promise<string> {
+    const models = await getAvailableModels();
+    let matched = models.find((m: ChatModel) => m.id === chat.modelId);
+    if (!matched) {
+        chat.modelId = "assistant";
+        matched = models[0];
+    }
+    chat.modelName = matched.name;
+    chat.activePrompt = await getModelPrompt(chat.modelId);
+    return chat.activePrompt;
+}
+
+async function getInstructPrompt(): Promise<string> {
+    return (await readConfigText("generate_instruction_prompt")) || DEFAULT_INSTRUCT_PROMPT;
+}
+
+/**
+ * Fills {{contextType}} / {{storyText}}. Uses replacer functions so "$&" or "$1" in the story
+ * are inserted literally. Prompts without {{storyText}} get the default context block.
+ */
+function formatSystemPromptWithContext(promptTemplate: string, contextType: string, storyText: string): string {
+    let prompt = (promptTemplate || "").trim();
+    const resolvedType = contextType || "Full Document";
+    const resolvedText = storyText == null ? "" : String(storyText);
+    if (!prompt.includes("{{storyText}}")) prompt += DEFAULT_CONTEXT_BLOCK;
+    return prompt
+        .replace(/\{\{contextType\}\}/g, () => resolvedType)
+        .replace(/\{\{storyText\}\}/g, () => resolvedText);
+}
+
+// --- ChatGLM Story Context: chapters, lorebooks, assembly and fitting to the token budget ---
+
+interface ScannedSection {
+    sectionId: number;
+    text: string;
+}
+
+async function getDocumentSections(): Promise<ScannedSection[]> {
+    try {
+        const scanned = await api.v1.document.scan();
+        return (scanned || []).map((s: { sectionId: number; section: Section }) => ({
+            sectionId: s.sectionId,
+            text: (s.section && s.section.text) || ""
+        }));
+    } catch (err: any) {
+        api.v1.log("ChatGLM: error scanning document: " + formatError(err));
+        return [];
+    }
+}
+
+async function loadDetectionConfig(): Promise<void> {
+    try {
+        const token = await api.v1.config.get("chapter_break_token");
+        chat.breakToken = typeof token === "string" && token.trim() ? token.trim() : "***";
+        const bracketed = await api.v1.config.get("chapter_title_bracketed");
+        chat.detectBracketedTitles = typeof bracketed === "boolean" ? bracketed : true;
+    } catch {
+        // keep defaults
+    }
+}
+
+/** Cheap fingerprint (FNV-1a over ids + text) so the status poll can skip unchanged documents */
+function documentSignature(sections: ScannedSection[]): string {
+    let hash = 0x811c9dc5;
+    const mix = (str: string): void => {
+        for (let i = 0; i < str.length; i++) {
+            hash ^= str.charCodeAt(i);
+            hash = Math.imul(hash, 0x01000193);
+        }
+        hash ^= 0x1f;
+        hash = Math.imul(hash, 0x01000193);
+    };
+    for (const s of sections) {
+        mix(String(s.sectionId));
+        mix(s.text);
+    }
+    return `${sections.length}:${(hash >>> 0).toString(16)}`;
+}
+
+function chapterLabel(kind: ChapterSectionKind, header: ParsedHeader | null, num: number | null): string {
+    if (kind === 'opening' || kind === 'prologue') return header && header.keyword ? capitalize(header.keyword) : "Prologue";
+    if (kind === 'epilogue') return "Epilogue";
+    if (kind === 'interlude') return "Interlude";
+    if (kind === 'division' && header) return header.labelText || "Part";
+    return `Ch. ${num !== null ? num : "?"}`;
+}
+
+function capitalize(word: string): string {
+    return word ? word.charAt(0).toUpperCase() + word.slice(1).toLowerCase() : word;
+}
+
+/**
+ * Splits the story into chapters with the shared header parser (same rules as Chapter Linter).
+ * Untitled text before the first header becomes "Prologue / Introduction". With no headers at
+ * all, the story is split on scene-break dividers instead.
+ */
+function detectChapters(sections: ScannedSection[], breakToken: string, detectBracketedTitles: boolean): DetectedChapter[] {
+    const detection: HeaderDetectionOptions = { detectionMode: 'auto', detectBracketedTitles, breakToken };
+    const items = sections
+        .map((s: ScannedSection) => ({ id: s.sectionId, text: s.text.trim() }))
+        .filter((s: { id: number; text: string }) => s.text.length > 0);
+    if (items.length === 0) return [];
+
+    const headerAt: number[] = [];
+    const parsed: ParsedHeader[] = [];
+    items.forEach((item: { id: number; text: string }, i: number) => {
+        const h = chParseHeader(item.text, detection);
+        if (h.isHeader) {
+            headerAt.push(i);
+            parsed.push(h);
+        }
+    });
+
+    const chapters: DetectedChapter[] = [];
+    const isDivider = (t: string): boolean => chIsDivider(t, breakToken);
+
+    if (headerAt.length > 0) {
+        const opening = items.slice(0, headerAt[0]).filter((s: { text: string }) => !isDivider(s.text));
+        if (opening.length > 0) {
+            chapters.push({
+                key: items[0].id, index: 0, number: null,
+                title: "Prologue / Introduction", label: "Prologue",
+                text: opening.map((s: { text: string }) => s.text).join("\n\n"),
+                kind: 'opening', isPrologue: true, isEpilogue: false
+            });
+        }
+        const numbers = chFillNumbers(parsed);
+        const divisions = chDivisionContext(parsed);
+        headerAt.forEach((start: number, h: number) => {
+            const end = h + 1 < headerAt.length ? headerAt[h + 1] : items.length;
+            let stop = end;
+            // Dividers right before the next header separate chapters; they aren't chapter text
+            while (h + 1 < headerAt.length && stop > start + 1 && isDivider(items[stop - 1].text)) stop--;
+            const header = parsed[h];
+            const kind: ChapterSectionKind = header.kind;
+            const num = numbers[h];
+            let title: string;
+            // In a story with Books/Parts, chapter numbers can repeat, so name the book too
+            const division = kind !== 'division' ? divisions[h] : "";
+            let label = chapterLabel(kind, header, num);
+            if (kind === 'chapter' || kind === 'title') {
+                title = header.cleanName ? `Chapter ${num}: ${header.cleanName}` : `Chapter ${num}`;
+            } else {
+                title = chDisplayTitle(header) || capitalize(header.keyword);
+            }
+            if (division) {
+                title = `${division}, ${title}`;
+                label = `${division} ${label}`;
+            }
+            chapters.push({
+                key: items[start].id,
+                index: chapters.length,
+                number: num,
+                title,
+                label,
+                text: items.slice(start, stop).map((s: { text: string }) => s.text).join("\n\n"),
+                kind,
+                isPrologue: kind === 'prologue',
+                isEpilogue: kind === 'epilogue'
+            });
+        });
+        return chapters;
+    }
+
+    // No headers: split on dividers
+    let parts: string[] = [];
+    let firstId = items[0].id;
+    const flush = (): void => {
+        if (parts.length === 0) return;
+        const n = chapters.length + 1;
+        chapters.push({
+            key: firstId, index: chapters.length, number: n,
+            title: `Chapter ${n}`, label: `Ch. ${n}`,
+            text: parts.join("\n\n"), kind: 'chapter', isPrologue: false, isEpilogue: false
+        });
+        parts = [];
+    };
+    for (const item of items) {
+        if (isDivider(item.text)) {
+            flush();
+        } else {
+            if (parts.length === 0) firstId = item.id;
+            parts.push(item.text);
+        }
+    }
+    flush();
+    return chapters;
+}
+
+// --- Lorebook ---
+
+async function fetchLorebookData(): Promise<void> {
+    try {
+        chat.loreCategories = (await api.v1.lorebook.categories()) || [];
+        chat.loreEntries = (await api.v1.lorebook.entries()) || [];
+    } catch (err: any) {
+        api.v1.log("ChatGLM: error fetching lorebook: " + formatError(err));
+    }
+}
+
+function lorebookEntryName(entry: LorebookEntry): string {
+    if (entry.displayName && entry.displayName.trim()) return entry.displayName.trim();
+    if (entry.keys && entry.keys.length > 0 && entry.keys[0].trim()) return entry.keys[0].trim();
+    return "Lorebook Entry";
+}
+
+function formatLorebookContext(entries: LorebookEntry[], categories: LorebookCategory[], selectedIds: string[]): string {
+    if (selectedIds.length === 0 || entries.length === 0) return "";
+    const categoryNames: Record<string, string> = {};
+    for (const cat of categories) {
+        if (cat && cat.id) categoryNames[cat.id] = cat.name || "Category";
+    }
+    const parts: string[] = [];
+    for (const id of selectedIds) {
+        const entry = entries.find((e: LorebookEntry) => e && e.id === id);
+        if (!entry || !entry.text || !entry.text.trim()) continue;
+        const catName = entry.category ? categoryNames[entry.category] : undefined;
+        const name = lorebookEntryName(entry);
+        parts.push(`--- [${catName ? `${catName}: ${name}` : name}] ---\n${entry.text.trim()}`);
+    }
+    if (parts.length === 0) return "";
+    return `### ATTACHED LOREBOOK & REFERENCE CONTEXT:\n${parts.join("\n\n")}`;
+}
+
+// --- Context assembly: highlighted selection > targeted chapter(s) > full document ---
+
+function chapterHeading(ch: DetectedChapter): string {
+    return ch.title;
+}
+
+async function getActiveStoryContext(): Promise<StoryContext> {
+    await loadDetectionConfig();
+    const sections = await getDocumentSections();
+    chat.chapters = detectChapters(sections, chat.breakToken, chat.detectBracketedTitles);
+
+    // Drop picks for chapters that no longer exist
+    const liveKeys = new Set<number>(chat.chapters.map((c: DetectedChapter) => c.key));
+    chat.chapterKeys = chat.chapterKeys.filter((k: number) => liveKeys.has(k));
+    if (chat.loreEntries.length > 0) {
+        chat.loreIds = chat.loreIds.filter((id: string) => chat.loreEntries.some((e: LorebookEntry) => e.id === id));
+    }
+
+    const fullText = sections.filter((s: ScannedSection) => s.text).map((s: ScannedSection) => s.text + "\n").join("");
+    let baseText = "";
+    let baseType = "Full Document";
+    let isSelection = false;
+    let isChapter = false;
+    let hasPreviousContext = false;
+    let chapterTitle: string | null = null;
+
+    if (chat.selectedContextText) {
+        baseText = chat.selectedContextText;
+        baseType = "Specific Excerpt (Highlighted Selection)";
+        isSelection = true;
+    } else if (chat.chapterKeys.length > 0) {
+        const selected = chat.chapters.filter((c: DetectedChapter) => chat.chapterKeys.includes(c.key));
+        const oldest = selected[0];
+        const prior = chat.usePreviousContext ? chat.chapters.slice(0, oldest.index) : [];
+        const priorText = prior.map((c: DetectedChapter) => `--- [${chapterHeading(c)}] ---\n${c.text}`).join("\n\n");
+        isChapter = true;
+
+        if (selected.length === 1) {
+            const ch = selected[0];
+            chapterTitle = ch.title;
+            if (prior.length > 0) {
+                const priorDesc = (ch.isPrologue || ch.isEpilogue || ch.number === null || ch.kind !== 'chapter' && ch.kind !== 'title')
+                    ? "Preceding Content"
+                    : `Chapters 1 to ${ch.number - 1}`;
+                baseText = `### PRIOR STORY CONTEXT (Background Reference — ${priorDesc}):\n${priorText}\n\n### TARGET CHAPTER FOCUS (${ch.title} — Primary Workshop Text):\n${ch.text}`;
+                baseType = `${ch.title} (+ Prev Chapters)`;
+                hasPreviousContext = true;
+            } else {
+                baseText = ch.text;
+                baseType = ch.title;
+            }
+        } else {
+            const labels = selected.map((c: DetectedChapter) => c.label).join(", ");
+            chapterTitle = labels;
+            const targetText = selected.map((c: DetectedChapter) => `=== [${chapterHeading(c)}] ===\n${c.text}`).join("\n\n");
+            if (prior.length > 0) {
+                baseText = `### PRIOR STORY CONTEXT (Background Reference — Chapters prior to ${oldest.isPrologue || oldest.isEpilogue ? oldest.label : `Chapter ${oldest.number}`}):\n${priorText}\n\n### TARGET CHAPTER FOCUS (${labels} — Primary Workshop Text):\n${targetText}`;
+                baseType = `${labels} (+ Prev Chapters)`;
+                hasPreviousContext = true;
+            } else {
+                baseText = `### TARGET CHAPTER FOCUS (${labels} — Primary Workshop Text):\n${targetText}`;
+                baseType = labels;
+            }
+        }
+    } else {
+        baseText = fullText;
+    }
+
+    let finalText = baseText;
+    let finalType = baseType;
+    const lorebookText = formatLorebookContext(chat.loreEntries, chat.loreCategories, chat.loreIds);
+    if (lorebookText) {
+        const count = chat.loreIds.length;
+        finalType = `${baseType} (+ ${count} Lorebook${count > 1 ? "s" : ""})`;
+        if (baseText.trim()) {
+            let storySection = baseText;
+            if (isSelection) {
+                storySection = `### TARGET EXCERPT (Highlighted Selection — Primary Workshop Text):\n${baseText}`;
+            } else if (isChapter && !baseText.startsWith("### ")) {
+                storySection = `### TARGET CHAPTER FOCUS (${chapterTitle || "Selected Chapter"} — Primary Workshop Text):\n${baseText}`;
+            } else if (!isSelection && !isChapter) {
+                storySection = `### FULL STORY DOCUMENT (Primary Workshop Text):\n${baseText}`;
+            }
+            finalText = `${lorebookText}\n\n***\n\n${storySection}`;
+        } else {
+            finalText = lorebookText;
+        }
+    }
+
+    return {
+        text: finalText,
+        contextType: finalType,
+        isSelection,
+        isChapter,
+        hasPreviousContext,
+        chapterTitle,
+        hasLorebook: !!lorebookText,
+        lorebookCount: lorebookText ? chat.loreIds.length : 0,
+        lorebookText,
+        baseStoryText: baseText
+    };
+}
+
+// --- Fitting the prompt to the model's context ---
+
+async function countTokens(text: string): Promise<number> {
+    if (!text) return 0;
+    return (await api.v1.tokenizer.encode(text, MODEL_NAME)).length;
+}
+
+async function countMessageTokens(messages: Message[]): Promise<number> {
+    let total = 0;
+    for (const m of messages) total += (await countTokens(m.content || "")) + MESSAGE_OVERHEAD_TOKENS;
+    return total;
+}
+
+/** Keeps the last `keep` tokens of a text */
+async function keepTail(text: string, keep: number): Promise<string> {
+    if (keep <= 0 || !text) return "";
+    const tokens = await api.v1.tokenizer.encode(text, MODEL_NAME);
+    if (tokens.length <= keep) return text;
+    return api.v1.tokenizer.decode(tokens.slice(tokens.length - keep), MODEL_NAME);
+}
+
+/** Context type label once the story had to be cut to fit */
+function describeTruncated(ctx: StoryContext): string {
+    const lore = ctx.hasLorebook ? ` (+ ${ctx.lorebookCount} Lorebook${ctx.lorebookCount > 1 ? "s" : ""})` : "";
+    if (ctx.isSelection) return `Selected Excerpt (Truncated to fit)${lore}`;
+    if (ctx.isChapter) {
+        return ctx.hasPreviousContext
+            ? `${ctx.chapterTitle || "Chapter"} (+ Prev Chapters, Truncated)${lore}`
+            : `${ctx.chapterTitle || "Chapter"} (Truncated from start)${lore}`;
+    }
+    return `Document Excerpt (Truncated from start)${lore}`;
+}
+
+/**
+ * Cuts the story context to `available` tokens, removing from the start of the story first so
+ * attached lorebook entries stay intact at the top.
+ */
+async function fitStoryContext(ctx: StoryContext, available: number): Promise<string> {
+    if (available <= 0) return "";
+    if (!ctx.lorebookText) return keepTail(ctx.baseStoryText, available);
+    const header = `\n\n***\n\n### ACTIVE STORY CONTEXT (Truncated from start to fit token budget):\n`;
+    const loreTokens = await countTokens(ctx.lorebookText);
+    const headerTokens = await countTokens(header);
+    const forStory = available - loreTokens - headerTokens;
+    if (forStory > 0) {
+        const story = await keepTail(ctx.baseStoryText, forStory);
+        return story ? `${ctx.lorebookText}${header}${story}` : ctx.lorebookText;
+    }
+    return keepTail(ctx.lorebookText, available);
+}
+
+/**
+ * Builds the exact messages for a generation and checks they fit the model's context, counting
+ * the system prompt, the whole chat, the new message and the reply. Nothing is sent (and no
+ * tokens are spent) when it doesn't fit. This replaces v2.0's 15-second cached estimate.
+ */
+async function planPrompt(history: ChatMessage[], trailingUser: string | null, outputTokens: number): Promise<PromptPlan> {
+    await refreshActiveModel();
+    const ctx = await getActiveStoryContext();
+    const maxContext = await api.v1.maxTokens(MODEL_NAME);
+    const budget = maxContext - outputTokens - PROMPT_SAFETY_TOKENS;
+
+    const chatMessages: Message[] = history.map((m: ChatMessage) => ({ role: m.role, content: m.content }));
+    if (trailingUser !== null) chatMessages.push({ role: "user", content: trailingUser });
+
+    const fixed = (await countTokens(formatSystemPromptWithContext(chat.activePrompt, ctx.contextType, ""))) + MESSAGE_OVERHEAD_TOKENS
+        + (await countMessageTokens(chatMessages));
+    const fail = (reason: string): PromptPlan => ({
+        ok: false, reason, messages: [], contextType: ctx.contextType, storyTokens: 0, keptStoryTokens: 0, percentage: 0
+    });
+    if (fixed > budget) {
+        return fail("The chat is too long to fit in the model's context. Compact or clear the chat first.");
+    }
+
+    const storyTokens = await countTokens(ctx.text);
+    let storyText = ctx.text;
+    let contextType = ctx.contextType;
+    let kept = storyTokens;
+    const available = budget - fixed;
+    if (storyTokens > available) {
+        storyText = await fitStoryContext(ctx, available);
+        if (!storyText) return fail("Token budget too low for any story text. Try compacting chat history.");
+        kept = Math.min(storyTokens, await countTokens(storyText));
+        contextType = describeTruncated(ctx);
+    }
+
+    const messages: Message[] = [
+        { role: "system", content: formatSystemPromptWithContext(chat.activePrompt, contextType, storyText) },
+        ...chatMessages
+    ];
+    return {
+        ok: true,
+        reason: "",
+        messages,
+        contextType,
+        storyTokens,
+        keptStoryTokens: kept,
+        percentage: storyTokens === 0 ? 100 : Math.max(0, Math.min(100, Math.round(kept / storyTokens * 100)))
+    };
+}
+
+/** Recomputes how much of the story the next message would include (shown in the status line) */
+async function refreshStatus(): Promise<void> {
+    try {
+        const plan = await planPrompt(chat.history, null, CHAT_OUTPUT_TOKENS);
+        chat.status = { percentage: plan.ok ? plan.percentage : 0, ok: plan.ok, reason: plan.reason };
+    } catch (err: any) {
+        api.v1.log("ChatGLM: status refresh failed: " + formatError(err));
+    }
+}
+
+/** "Add to Chat": rejects a selection that wouldn't fit whole */
+async function setSelectedContext(text: string): Promise<boolean> {
+    if (!text || !text.trim()) {
+        await api.v1.ui.toast("Selected text is empty.", { type: "warning" });
+        return false;
+    }
+    const previous = chat.selectedContextText;
+    chat.selectedContextText = text;
+    const plan = await planPrompt(chat.history, null, CHAT_OUTPUT_TOKENS);
+    if (!plan.ok || plan.percentage < 100) {
+        chat.selectedContextText = previous;
+        await api.v1.ui.toast("Selected text exceeds the token budget. Please select less text.", { type: "warning" });
+        await refreshStatus();
+        await updatePanel();
+        return false;
+    }
+    // The selection takes priority over chapter picks while it is set (same as v2.0)
+    chat.status = { percentage: 100, ok: true, reason: "" };
+    await updatePanel();
+    await api.v1.ui.toast("Selection added to the chat context.", { type: "info" });
+    return true;
+}
+
+// --- ChatGLM Script Token Budget (rate limits) ---
+// Two separate limits apply to scripts: output tokens, and *uncached* input tokens over a rolling
+// 6-minute window. v2.0 only checked output, so a huge prompt could still burn the input
+// allowance. Both are checked here, after the prompt is built and before anything is sent.
+
+async function waitOrRefuse(kind: "output" | "input", waitMs: number, wait: () => Promise<void>): Promise<boolean> {
+    if (waitMs > MAX_BUDGET_WAIT_MS) {
+        const seconds = Math.ceil(waitMs / 1000);
+        const when = seconds < 60 ? `${seconds} seconds` : `about ${Math.ceil(seconds / 60)} minutes`;
+        await api.v1.ui.toast(`Script ${kind} token limit reached. Please wait ${when}, then retry.`, { type: "warning" });
+        return false;
+    }
+    if (waitMs > 0) {
+        await api.v1.ui.toast(`Waiting for token budget (${Math.ceil(waitMs / 1000)}s)...`, { type: "info" });
+        await wait();
+    }
+    return true;
+}
+
+/** True when both budgets allow this request now (or after a short wait) */
+async function ensureTokenBudget(messages: Message[], outputTokens: number): Promise<boolean> {
+    if (api.v1.script.getAllowedOutput() < outputTokens) {
+        const waitMs = api.v1.script.getTimeUntilAllowedOutput(outputTokens);
+        if (!(await waitOrRefuse("output", waitMs, () => api.v1.script.waitForAllowedOutput(outputTokens)))) return false;
+    }
+    if (messages.length > 0) {
+        const uncached = api.v1.script.countUncachedInputTokens(messages);
+        if (uncached > api.v1.script.getAllowedInput()) {
+            const waitMs = api.v1.script.getTimeUntilAllowedInput(uncached);
+            if (!(await waitOrRefuse("input", waitMs, () => api.v1.script.waitForAllowedInput(uncached)))) return false;
+        }
+    }
+    return true;
+}
+
+// --- ChatGLM UI Kit: theme tokens, presets, component factories, dialogs ---
+
+/** Semantic names for NovelAI theme tokens (no hardcoded hex/rgba colours) */
+const COLOR = {
+    canvas: 'bg0',
+    surface: 'bg1',
+    raised: 'bg2',
+    selected: 'bg3',
+    heading: 'textHeadings',
+    body: 'textMain',
+    muted: 'textDisabled',
+    danger: 'warning',
+    /** Story text colours double as accents for the three context kinds */
+    selection: 'textHighlight',
+    chapter: 'textAI',
+    lore: 'textEdit'
+} as const;
+
+type Style = Record<string, string>;
+
+const sx = (...styles: (Style | undefined | false)[]): Style => Object.assign({}, ...styles.filter(Boolean));
+
+const S: Record<string, Style> = {
+    smallButton: {
+        height: '22px', padding: '0 6px', margin: '0', fontSize: '0.75em',
+        backgroundColor: COLOR.raised, border: `1px solid ${COLOR.raised}`, borderRadius: '4px',
+        color: COLOR.muted, display: 'flex', alignItems: 'center', whiteSpace: 'nowrap'
+    },
+    toolbarButton: { flex: '1', height: '32px', margin: '0', padding: '0', display: 'flex', alignItems: 'center', justifyContent: 'center' },
+    dropup: {
+        marginBottom: '4px', padding: '4px', backgroundColor: COLOR.surface, border: `1px solid ${COLOR.raised}`,
+        borderRadius: '6px', display: 'flex', flexDirection: 'column', gap: '3px', maxHeight: '200px', overflowY: 'auto'
+    },
+    dropupRow: { textAlign: 'left', justifyContent: 'flex-start', paddingLeft: '8px', margin: '0', height: '26px', border: 'none', fontSize: '0.82em' },
+    actionRow: { gap: '4px', marginTop: '0', marginBottom: '10px', justifyContent: 'flex-end', alignItems: 'center' },
+    muted: { color: COLOR.muted, fontSize: '0.8em' }
+};
+
+type ButtonVariant = 'default' | 'primary' | 'danger' | 'subtle' | 'small';
+
+const BUTTON_VARIANTS: Record<ButtonVariant, Style> = {
+    default: {},
+    primary: { backgroundColor: COLOR.selected, color: COLOR.heading, fontWeight: 'bold' },
+    danger: { backgroundColor: COLOR.raised, color: COLOR.danger, border: `1px solid ${COLOR.danger}`, fontWeight: 'bold' },
+    subtle: { backgroundColor: 'transparent', border: 'none', color: COLOR.body },
+    small: S.smallButton
+};
+
+interface ButtonOpts {
+    id?: string;
+    icon?: IconId;
+    variant?: ButtonVariant;
+    disabled?: boolean;
+    style?: Style;
+}
+
+function button(text: string, onClick: () => void | Promise<void>, opts: ButtonOpts = {}): UIPart {
+    return {
+        type: 'button',
+        id: opts.id,
+        text,
+        iconId: opts.icon,
+        disabled: !!opts.disabled,
+        disabledWhileCallbackRunning: true,
+        callback: onClick,
+        style: sx(BUTTON_VARIANTS[opts.variant || 'default'], opts.style)
+    };
+}
+
+function text(value: string, opts: { id?: string; markdown?: boolean; style?: Style } = {}): UIPart {
+    return { type: 'text', id: opts.id, text: value, markdown: opts.markdown !== false, noTemplate: true, style: opts.style };
+}
+
+function row(children: UIPart[], style: Style = {}): UIPart {
+    return { type: 'row', content: children, style: sx({ alignItems: 'center' }, style) };
+}
+
+function column(children: UIPart[], style: Style = {}): UIPart {
+    return { type: 'column', content: children, style };
+}
+
+/** Checkbox-style icon for an on / partly on / off state */
+function checkIcon(state: 'all' | 'some' | 'none'): IconId {
+    return state === 'all' ? 'check-square' : state === 'some' ? 'minus-square' : 'square';
+}
+
+/**
+ * Yes/no dialog. Resolves before closing so the closed-handler fallback never wins, and treats
+ * the X button as "cancel".
+ */
+async function confirmDialog(title: string, message: string, confirmText: string, danger: boolean): Promise<boolean> {
+    return new Promise<boolean>(async (resolve: (value: boolean) => void) => {
+        let done = false;
+        const finish = (value: boolean): void => {
+            if (!done) {
+                done = true;
+                resolve(value);
+            }
+        };
+        const modal = await api.v1.ui.modal.open({
+            title,
+            size: 'small',
+            content: [
+                text(message),
+                row([
+                    button("Cancel", async () => { finish(false); await modal.close(); }, { icon: 'x', variant: 'subtle' }),
+                    button(confirmText, async () => { finish(true); await modal.close(); }, { icon: danger ? 'trash-2' : 'check', variant: danger ? 'danger' : 'primary' })
+                ], { justifyContent: 'flex-end', gap: '8px', marginTop: '12px' })
+            ]
+        });
+        modal.closed.then(() => finish(false));
+    });
+}
+
+// --- Chat message rendering helpers ---
+
+function messagePartId(index: number): string {
+    return `msg-${index}`;
+}
+
+function formatMessageText(msg: ChatMessage): string {
+    if (msg.role === "user") return `**You:** ${msg.content}`;
+    return `**${msg.modelDisplayName || chat.modelName}:** ${msg.content}`;
+}
+
+// --- ChatGLM Generation Actions ---
+
+const STREAM_PAINT_INTERVAL_MS = 100;
+const CONTINUE_DIRECTIVE = "Continue your previous response directly from where you left off. Do not repeat any part of what you already wrote, and do not include any conversational preamble, filler, or explanation. Resume immediately from the exact point of interruption.";
+
+/** Heuristic: did this assistant response stop mid-thought? */
+function isResponseLikelyCutOff(text: string, finishReason?: string): boolean {
+    if (!text || typeof text !== "string") return false;
+    const trimmed = text.trim();
+    if (!trimmed) return false;
+    if (finishReason === "length") return true;
+    // Unclosed code block (odd number of ```)
+    if ((trimmed.match(/```/g) || []).length % 2 === 1) return true;
+    if (finishReason === "stop") return false;
+    if (trimmed.endsWith("```")) return false;
+    // Dangling punctuation or connectors
+    if (/[,;:\-—–(\[\{<]\s*$/.test(trimmed)) return true;
+    // Ends with terminal punctuation (optionally wrapped in quotes/brackets/emphasis)
+    if (/[.!?…。！？]["'”’\)\]\}*_`]*$/.test(trimmed)) return false;
+    return true;
+}
+
+/** Strips "Continuing:"-style preambles and any overlap with the end of the previous text */
+function cleanContinuationText(previousText: string, newText: string): string {
+    if (!newText) return "";
+    let text = newText.replace(/^(?:Continuing (?:where (?:I|we) left off|from before|from where I left off):?\s*|Here is the continuation:?\s*|Continuing:?\s*)/i, "");
+    if (previousText && text) {
+        const maxOverlap = Math.min(previousText.length, text.length, 60);
+        for (let len = maxOverlap; len >= 4; len--) {
+            if (text.startsWith(previousText.slice(previousText.length - len))) {
+                text = text.slice(len);
+                break;
+            }
+        }
+    }
+    return text;
+}
+
+function refreshCutOffFlag(): void {
+    const last = chat.history[chat.history.length - 1];
+    chat.hasCutOffResponse = !!last && last.role === "assistant" && isResponseLikelyCutOff(last.content);
+}
+
+/**
+ * Runs one generation with the panel locked. Always unlocks, disposes the cancel signal and
+ * saves, whichever way it ends (v1.1.0 left the input disabled on some early returns).
+ */
+async function runLocked(label: string, work: (signal: CancellationSignal | null) => Promise<void>): Promise<void> {
+    if (chat.generating) {
+        await api.v1.ui.toast("Already generating...", { type: "warning" });
+        return;
+    }
+    chat.generating = true;
+    chat.stopRequested = false;
+    chat.dropdown = 'none';
+    try {
+        try {
+            chat.signal = await api.v1.createCancellationSignal();
+        } catch {
+            chat.signal = null;
+        }
+        await updatePanel();
+        await work(chat.signal);
+    } catch (err: any) {
+        if ((chat.signal && chat.signal.cancelled) || chat.stopRequested) {
+            await api.v1.ui.toast(`${label} stopped.`, { type: "info" });
+        } else {
+            const message = formatError(err);
+            await api.v1.ui.toast(`${label} failed: ${message}`, { type: "error" });
+            api.v1.log(`ChatGLM: ${label} error: ${message}`);
+        }
+    } finally {
+        if (chat.signal) {
+            try {
+                chat.signal.dispose();
+            } catch {
+                // already disposed
+            }
+        }
+        chat.signal = null;
+        chat.generating = false;
+        chat.stopRequested = false;
+        await saveChatHistory();
+        await refreshStatus();
+        await updatePanel();
+    }
+}
+
+/** Repaints one streaming message without rebuilding the panel (no timers needed) */
+function makeStreamPainter(index: number): (final: boolean) => void {
+    let lastPaint = 0;
+    return (final: boolean): void => {
+        const now = Date.now();
+        if (!final && now - lastPaint < STREAM_PAINT_INTERVAL_MS) return;
+        lastPaint = now;
+        const msg = chat.history[index];
+        if (!msg) return;
+        api.v1.ui.updateParts([{ type: 'text', id: messagePartId(index), text: formatMessageText(msg) }])
+            .catch((err: any) => api.v1.log("ChatGLM: stream paint failed: " + formatError(err)));
+    };
+}
+
+/** Streams a reply into chat.history[index]; returns the finish reason */
+async function streamReply(index: number, messages: Message[], signal: CancellationSignal | null, previous: string): Promise<string | undefined> {
+    const paint = makeStreamPainter(index);
+    let received = "";
+    const response = await api.v1.generate(
+        messages,
+        { model: MODEL_NAME, max_tokens: CHAT_OUTPUT_TOKENS },
+        (choices: GenerationChoice[], final: boolean) => {
+            if (chat.stopRequested) return;
+            for (const choice of choices) received += choice.text || "";
+            const msg = chat.history[index];
+            if (msg) msg.content = previous ? previous + cleanContinuationText(previous, received) : received;
+            paint(final);
+        },
+        "background",
+        signal || undefined
+    );
+    const msg = chat.history[index];
+    if (msg && previous) msg.content = previous + cleanContinuationText(previous, received);
+    return response && response.choices && response.choices[0] ? response.choices[0].finish_reason : undefined;
+}
+
+// --- Send ---
+
+async function handleSubmit(value: string): Promise<void> {
+    const query = (value || "").trim();
+    if (!query || chat.generating) return;
+    let assistantIndex = -1;
+    await runLocked("Generation", async (signal: CancellationSignal | null) => {
+        // Build and size-check the real prompt first; on failure nothing is sent or added to the chat
+        const plan = await planPrompt(chat.history, query, CHAT_OUTPUT_TOKENS);
+        if (!plan.ok) {
+            await api.v1.ui.toast(plan.reason, { type: "warning" });
+            return;
+        }
+        if (!(await ensureTokenBudget(plan.messages, CHAT_OUTPUT_TOKENS))) return;
+
+        chat.alternatives = {};
+        chat.hasCutOffResponse = false;
+        chat.history.push({ role: "user", content: query });
+        await api.v1.storage.set(INPUT_KEY, "");
+        chat.history.push({ role: "assistant", content: "", modelDisplayName: chat.modelName, modelId: chat.modelId });
+        assistantIndex = chat.history.length - 1;
+        await saveChatHistory();
+        await updatePanel();
+
+        try {
+            const finish = await streamReply(assistantIndex, plan.messages, signal, "");
+            chat.hasCutOffResponse = isResponseLikelyCutOff(chat.history[assistantIndex].content, finish);
+        } finally {
+            // Drop the placeholder if nothing arrived (stopped or failed before the first token)
+            const msg = chat.history[assistantIndex];
+            if (msg && !msg.content.trim()) chat.history.splice(assistantIndex, 1);
+        }
+    });
+}
+
+// --- Continue a cut-off reply ---
+
+async function continueResponse(): Promise<void> {
+    const index = chat.history.length - 1;
+    const last = chat.history[index];
+    if (!last || last.role !== "assistant") {
+        chat.hasCutOffResponse = false;
+        await updatePanel();
+        return;
+    }
+    const previous = last.content;
+    await runLocked("Continue", async (signal: CancellationSignal | null) => {
+        const plan = await planPrompt(chat.history, CONTINUE_DIRECTIVE, CHAT_OUTPUT_TOKENS);
+        if (!plan.ok) {
+            await api.v1.ui.toast(plan.reason, { type: "warning" });
+            return;
+        }
+        if (!(await ensureTokenBudget(plan.messages, CHAT_OUTPUT_TOKENS))) return;
+        await api.v1.ui.toast("Continuing response...", { type: "info" });
+        const finish = await streamReply(index, plan.messages, signal, previous);
+        chat.hasCutOffResponse = isResponseLikelyCutOff(chat.history[index].content, finish);
+        await api.v1.ui.toast(chat.hasCutOffResponse ? "Response continued (token limit reached again)." : "Response completed!",
+            { type: chat.hasCutOffResponse ? "info" : "success" });
+    });
+}
+
+// --- Redo with version history ---
+
+async function redoResponse(index: number): Promise<void> {
+    const target = chat.history[index];
+    if (!target || target.role !== "assistant") return;
+    if (index === 0) {
+        await api.v1.ui.toast("No user prompt to redo from.", { type: "warning" });
+        return;
+    }
+    const backup: ResponseVersion = {
+        content: target.content,
+        modelDisplayName: target.modelDisplayName || chat.modelName,
+        modelId: target.modelId || chat.modelId
+    };
+    await runLocked("Regeneration", async (signal: CancellationSignal | null) => {
+        const plan = await planPrompt(chat.history.slice(0, index), null, CHAT_OUTPUT_TOKENS);
+        if (!plan.ok) {
+            await api.v1.ui.toast(plan.reason, { type: "warning" });
+            return;
+        }
+        if (!(await ensureTokenBudget(plan.messages, CHAT_OUTPUT_TOKENS))) return;
+        if (!chat.alternatives[index]) chat.alternatives[index] = { versions: [backup], activeVersionIndex: 0 };
+
+        target.content = "";
+        await updatePanel();
+        let finish: string | undefined;
+        try {
+            finish = await streamReply(index, plan.messages, signal, "");
+        } finally {
+            if (!target.content.trim()) {
+                // Stopped or failed before any text: put the old reply back
+                target.content = backup.content;
+                target.modelDisplayName = backup.modelDisplayName;
+                target.modelId = backup.modelId;
+            }
+        }
+        if (!target.content.trim() || target.content === backup.content) return;
+        target.modelDisplayName = chat.modelName;
+        target.modelId = chat.modelId;
+        const alt = chat.alternatives[index];
+        alt.versions.push({ content: target.content, modelDisplayName: chat.modelName, modelId: chat.modelId });
+        alt.activeVersionIndex = alt.versions.length - 1;
+        if (index === chat.history.length - 1) chat.hasCutOffResponse = isResponseLikelyCutOff(target.content, finish);
+        await api.v1.ui.toast("Response regenerated", { type: "success" });
+    });
+}
+
+async function switchResponseVersion(index: number, direction: number): Promise<void> {
+    if (chat.generating) return;
+    const entry = chat.alternatives[index];
+    if (!entry || entry.versions.length <= 1) return;
+    const next = entry.activeVersionIndex + direction;
+    if (next < 0 || next >= entry.versions.length) return;
+    entry.activeVersionIndex = next;
+    const chosen = entry.versions[next];
+    const msg = chat.history[index];
+    if (msg) {
+        msg.content = chosen.content;
+        msg.modelDisplayName = chosen.modelDisplayName;
+        msg.modelId = chosen.modelId;
+    }
+    if (index === chat.history.length - 1) chat.hasCutOffResponse = isResponseLikelyCutOff(chosen.content);
+    await saveChatHistory();
+    await refreshStatus();
+    await updatePanel();
+}
+
+// --- Compact ---
+
+async function compactChatHistory(): Promise<void> {
+    if (chat.history.length < 2) {
+        await api.v1.ui.toast("No conversation to Compact.", { type: "warning" });
+        return;
+    }
+    await runLocked("Compacting", async (signal: CancellationSignal | null) => {
+        // Keep the newest messages that fit, so a chat too long to send can still be compacted
+        const maxContext = await api.v1.maxTokens(MODEL_NAME);
+        const budget = maxContext - SIDE_OUTPUT_TOKENS - PROMPT_SAFETY_TOKENS - (await countTokens(COMPACT_SUMMARY_PROMPT)) - MESSAGE_OVERHEAD_TOKENS;
+        const kept: Message[] = [];
+        let used = 0;
+        for (let i = chat.history.length - 1; i >= 0; i--) {
+            const m = chat.history[i];
+            const cost = (await countTokens(m.content)) + MESSAGE_OVERHEAD_TOKENS;
+            if (used + cost > budget) break;
+            used += cost;
+            kept.unshift({ role: m.role, content: m.content });
+        }
+        if (kept.length === 0) {
+            await api.v1.ui.toast("The latest message alone is too long to compact. Clear the chat instead.", { type: "warning" });
+            return;
+        }
+        const messages: Message[] = [...kept, { role: "user", content: COMPACT_SUMMARY_PROMPT }];
+        if (!(await ensureTokenBudget(messages, SIDE_OUTPUT_TOKENS))) return;
+        await api.v1.ui.toast(kept.length < chat.history.length
+            ? `Compacting the latest ${kept.length} messages (older ones don't fit)...`
+            : "Compacting chat history...", { type: "info" });
+
+        let summary = "";
+        await api.v1.generate(messages, { model: MODEL_NAME, max_tokens: SIDE_OUTPUT_TOKENS },
+            (choices: GenerationChoice[]) => {
+                if (chat.stopRequested) return;
+                for (const choice of choices) summary += choice.text || "";
+            }, "background", signal || undefined);
+
+        if (!summary.trim()) {
+            await api.v1.ui.toast(signal && signal.cancelled ? "Compacting stopped." : "Failed to generate summary", { type: signal && signal.cancelled ? "info" : "error" });
+            return;
+        }
+        chat.history = [{ role: "assistant", content: "Summary (last session): " + summary.trim(), modelDisplayName: chat.modelName, modelId: chat.modelId }];
+        chat.alternatives = {};
+        chat.hasCutOffResponse = false;
+        await api.v1.ui.toast("Chat history compacted!", { type: "success" });
+    });
+}
+
+// --- Instruct: turn the discussion into a { instruction } at the end of the story ---
+
+async function generateInstruction(): Promise<void> {
+    if (chat.history.length === 0) {
+        await api.v1.ui.toast("No chat history to generate from.", { type: "warning" });
+        return;
+    }
+    if (!(await api.v1.permissions.has("documentEdit"))) {
+        const granted = await api.v1.permissions.request("documentEdit", "Needed to add the instruction to your story.");
+        if (!granted) {
+            await api.v1.ui.toast("The document edit permission is required for Instruct.", { type: "error" });
+            return;
+        }
+    }
+    await runLocked("Instruction", async (signal: CancellationSignal | null) => {
+        const instructPrompt = await getInstructPrompt();
+        const messages: Message[] = [
+            ...chat.history.map((m: ChatMessage) => ({ role: m.role, content: m.content })),
+            { role: "user", content: instructPrompt }
+        ];
+        // generateWithStory adds the story itself; reserve room for our chat messages so it trims the story instead of overflowing
+        const chatTokens = await countMessageTokens(messages);
+        const maxContext = await api.v1.maxTokens(MODEL_NAME);
+        if (chatTokens + SIDE_OUTPUT_TOKENS + PROMPT_SAFETY_TOKENS > maxContext * 0.75) {
+            await api.v1.ui.toast("The chat is too long for Instruct to leave room for the story. Compact it first.", { type: "warning" });
+            return;
+        }
+        if (!(await ensureTokenBudget(messages, SIDE_OUTPUT_TOKENS))) return;
+        await api.v1.ui.toast("Generating instruction...", { type: "info" });
+
+        const response = await api.v1.generateWithStory(
+            messages,
+            { model: MODEL_NAME, max_tokens: SIDE_OUTPUT_TOKENS },
+            { contextLimitReduction: chatTokens + PROMPT_SAFETY_TOKENS },
+            undefined,
+            "background",
+            signal || undefined
+        );
+        const text = response && response.choices && response.choices[0] ? (response.choices[0].text || "").trim() : "";
+        if (!text) {
+            await api.v1.ui.toast(signal && signal.cancelled ? "Instruction generation stopped." : "Generation completed but produced no output",
+                { type: signal && signal.cancelled ? "info" : "warning" });
+            return;
+        }
+        // Only touch the story once there is something to add (v2.0 added a blank line first)
+        await api.v1.document.append("\n{" + text);
+        await api.v1.ui.toast("Instruction added!", { type: "success" });
+    });
+}
+
+// --- Stop ---
+
+async function stopGeneration(): Promise<void> {
+    if (!chat.generating) return;
+    await api.v1.ui.toast("Stopping generation...", { type: "info" });
+    if (chat.signal) {
+        try {
+            await chat.signal.cancel();
+        } catch (err: any) {
+            api.v1.log("ChatGLM: error cancelling: " + formatError(err));
+        }
+    }
+    // Ignore chunks still in flight. The lock stays until the run ends (runLocked's finally),
+    // so a quick resend can't overlap the stopping run.
+    chat.stopRequested = true;
+    chat.hasCutOffResponse = false;
+    await updatePanel();
+}
+
+// --- Message edits ---
+
+async function deleteResponse(index: number): Promise<void> {
+    if (chat.generating || index < 0 || index >= chat.history.length) return;
+    chat.history.splice(index, 1);
+    // Alternatives are keyed by index, so later ones no longer line up
+    chat.alternatives = {};
+    refreshCutOffFlag();
+    await saveChatHistory();
+    await refreshStatus();
+    await updatePanel();
+    await api.v1.ui.toast("Response deleted", { type: "info" });
+}
+
+/** Removes a user message and everything after it; returns the removed prompt */
+async function truncateHistoryAt(index: number): Promise<string> {
+    const prompt = chat.history[index] ? chat.history[index].content : "";
+    chat.history = chat.history.slice(0, index);
+    chat.alternatives = {};
+    refreshCutOffFlag();
+    await saveChatHistory();
+    await refreshStatus();
+    return prompt;
+}
+
+async function deleteUserMessage(index: number): Promise<void> {
+    if (chat.generating || index < 0 || index >= chat.history.length) return;
+    const later = chat.history.length - 1 - index;
+    if (later > 0) {
+        const ok = await confirmDialog("Delete Message & Context",
+            `This deletes this message and the **${later}** message${later > 1 ? "s" : ""} after it (yours and the AI's). This can't be undone.`,
+            "Delete & Wipe Context", true);
+        if (!ok) return;
+    }
+    await truncateHistoryAt(index);
+    await updatePanel();
+    await api.v1.ui.toast("Message and subsequent context deleted", { type: "info" });
+}
+
+async function editAndRetryUserMessage(index: number): Promise<void> {
+    if (chat.generating || index < 0 || index >= chat.history.length) return;
+    const later = chat.history.length - 1 - index;
+    if (later > 0) {
+        const ok = await confirmDialog("Edit & Retry Message",
+            `The message goes back into the input box, and the **${later}** message${later > 1 ? "s" : ""} after it are removed. This can't be undone.`,
+            "Edit & Wipe Context", false);
+        if (!ok) return;
+    }
+    const prompt = await truncateHistoryAt(index);
+    await api.v1.storage.set(INPUT_KEY, prompt);
+    await updatePanel();
+    await api.v1.ui.toast("Message restored to input for editing", { type: "info" });
+}
+
+async function clearChat(): Promise<void> {
+    if (chat.generating) return;
+    if (chat.history.length > 0) {
+        const ok = await confirmDialog("Clear chat?", `This deletes all **${chat.history.length}** messages in this story's chat. This can't be undone.`, "Clear chat", true);
+        if (!ok) return;
+    }
+    chat.history = [];
+    chat.alternatives = {};
+    chat.hasCutOffResponse = false;
+    await saveChatHistory();
+    await refreshStatus();
+    await updatePanel();
+}
+
+// --- ChatGLM Multi-line Input Window ---
+
+async function openMultilineInputModal(): Promise<void> {
+    let wndw: { close: () => Promise<void> } | null = null;
+    const send = async (value: string): Promise<void> => {
+        if (!value || !value.trim()) return;
+        await api.v1.storage.set(INPUT_KEY, "");
+        if (wndw) await wndw.close();
+        await updatePanel();
+        await handleSubmit(value);
+    };
+    wndw = await api.v1.ui.window.open({
+        title: "Chat Message",
+        defaultHeight: 500,
+        defaultWidth: 650,
+        content: [
+            column([
+                {
+                    type: 'multilineTextInput',
+                    storageKey: INPUT_KEY,
+                    style: { flex: '1 1 0', minHeight: '200px' },
+                    onSubmit: (value: string) => { send(value).catch((err: any) => api.v1.log("ChatGLM: send failed: " + formatError(err))); }
+                },
+                row([
+                    button("Close", async () => { if (wndw) await wndw.close(); }, { icon: 'x', variant: 'subtle' }),
+                    button("Send", async () => send(String((await api.v1.storage.get(INPUT_KEY)) || "")), { icon: 'send', variant: 'primary' })
+                ], { marginTop: '16px', justifyContent: 'flex-end', gap: '8px' })
+            ], { height: '100%', display: 'flex', flexDirection: 'column' })
+        ]
+    });
+}
+
+// --- ChatGLM Panel ---
+
+function truncateLabel(value: string, max: number): string {
+    return value.length > max ? value.slice(0, max - 1) + "…" : value;
+}
+
+function selectedChapters(): DetectedChapter[] {
+    return chat.chapters.filter((c: DetectedChapter) => chat.chapterKeys.includes(c.key));
+}
+
+/** Status line text + accent colour: what the AI will read */
+function statusInfo(): { text: string; color: string } {
+    const lore = chat.loreIds.length > 0 ? ` (+${chat.loreIds.length} Lore)` : "";
+    const pct = chat.status.percentage;
+    const partial = chat.status.ok && pct < 100;
+    if (!chat.status.ok) return { text: chat.status.reason || "Not enough room for the story.", color: COLOR.danger };
+
+    if (chat.selectedContextText) {
+        const preview = chat.selectedContextText.slice(0, 24).trim().replace(/\s+/g, " ");
+        return { text: `Selection: "${preview}..."${lore}`, color: COLOR.selection };
+    }
+    const picked = selectedChapters();
+    if (picked.length > 0) {
+        const prev = chat.usePreviousContext && picked[0].index > 0 ? " (+Prev)" : "";
+        let label: string;
+        if (picked.length === 1) {
+            const ch = picked[0];
+            const name = ch.title.replace(/^(?:Chapter\s*\d*|Prologue\s*(?:\/\s*Introduction)?|Epilogue|Interlude)[:\s-]*/i, "").trim();
+            label = `${ch.label}${prev}${name ? `: ${truncateLabel(name, 14)}` : ""}`;
+        } else {
+            const labels = picked.map((c: DetectedChapter) => c.label).join(", ");
+            label = `${labels.length > 22 ? `${picked.length} Chapters` : labels}${prev}`;
+        }
+        return { text: partial ? `~${pct}% of ${label}${lore}` : `${label}${lore}`, color: partial ? COLOR.danger : COLOR.chapter };
+    }
+    if (partial) return { text: `AI will read ~${pct}% of document${lore}.`, color: COLOR.danger };
+    return chat.loreIds.length > 0
+        ? { text: `Document${lore}`, color: COLOR.lore }
+        : { text: "AI will read the current document.", color: COLOR.muted };
+}
+
+function chapterButtonLabel(): string {
+    const picked = selectedChapters();
+    if (picked.length === 0) return "Full Doc";
+    if (picked.length === 1) return picked[0].label;
+    const short = `Ch. ${picked.map((c: DetectedChapter) => c.isPrologue ? "P" : c.isEpilogue ? "E" : String(c.number === null ? "?" : c.number)).join(",")}`;
+    return short.length <= 12 ? short : `${picked.length} Chapters`;
+}
+
+function loreButtonLabel(): string {
+    if (chat.loreIds.length === 0) return "Lore";
+    if (chat.loreIds.length > 1) return `${chat.loreIds.length} Lore`;
+    const entry = chat.loreEntries.find((e: LorebookEntry) => e.id === chat.loreIds[0]);
+    return entry ? `Lore: ${truncateLabel(lorebookEntryName(entry), 10)}` : "1 Lore";
+}
+
+// --- Selection changes (button callbacks, so full re-renders are safe) ---
+
+async function afterSelectionChange(toast?: string): Promise<void> {
+    await saveSelections();
+    await refreshStatus();
+    await updatePanel();
+    if (toast) await api.v1.ui.toast(toast, { type: "info" });
+}
+
+async function toggleDropdown(which: ChatDropdown): Promise<void> {
+    chat.dropdown = chat.dropdown === which ? 'none' : which;
+    if (chat.dropdown === 'lore') await fetchLorebookData();
+    if (chat.dropdown === 'model') await getAvailableModels();
+    if (chat.dropdown === 'chapter') await getActiveStoryContext();
+    await updatePanel();
+}
+
+async function clearContextOverrides(): Promise<void> {
+    chat.selectedContextText = null;
+    chat.chapterKeys = [];
+    chat.loreIds = [];
+    await afterSelectionChange();
+}
+
+async function togglePreviousContext(): Promise<void> {
+    chat.usePreviousContext = !chat.usePreviousContext;
+    await afterSelectionChange(chat.usePreviousContext ? "Previous Context: Enabled" : "Previous Context: Disabled");
+}
+
+function toggleLoreIds(ids: string[], on: boolean): void {
+    const set = new Set<string>(chat.loreIds);
+    for (const id of ids) {
+        if (on) set.add(id);
+        else set.delete(id);
+    }
+    chat.loreIds = Array.from(set);
+}
+
+// --- View pieces ---
+
+function messageViews(): UIPart[] {
+    const parts: UIPart[] = [];
+    chat.history.forEach((msg: ChatMessage, index: number) => {
+        parts.push(text(formatMessageText(msg), {
+            id: messagePartId(index),
+            style: { marginBottom: '2px', color: msg.role === "user" ? COLOR.muted : COLOR.body, userSelect: 'text', cursor: 'text' }
+        }));
+        if (chat.generating) return;
+
+        if (msg.role === "user") {
+            parts.push(row([
+                button("Edit & Retry", async () => editAndRetryUserMessage(index), { icon: 'edit-2', variant: 'small' }),
+                button("Delete", async () => deleteUserMessage(index), { icon: 'trash', variant: 'small' })
+            ], S.actionRow));
+            return;
+        }
+
+        const controls: UIPart[] = [];
+        const alt = chat.alternatives[index];
+        if (alt && alt.versions.length > 1) {
+            const current = alt.versions[alt.activeVersionIndex];
+            const models = new Set<string>(alt.versions.map((v: ResponseVersion) => (v.modelDisplayName || v.modelId || "").trim()).filter((v: string) => v.length > 0));
+            const label = models.size > 1 && current && current.modelDisplayName
+                ? `${alt.activeVersionIndex + 1}/${alt.versions.length} (${current.modelDisplayName})`
+                : `${alt.activeVersionIndex + 1}/${alt.versions.length}`;
+            controls.push(
+                button("", async () => switchResponseVersion(index, -1), { icon: 'chevron-left', variant: 'small', disabled: alt.activeVersionIndex === 0 }),
+                text(label, { markdown: false, style: { fontSize: '0.72em', color: COLOR.chapter, padding: '0 2px', userSelect: 'none' } }),
+                button("", async () => switchResponseVersion(index, 1), { icon: 'chevron-right', variant: 'small', disabled: alt.activeVersionIndex >= alt.versions.length - 1 })
+            );
+        }
+        controls.push(
+            button("Redo", async () => redoResponse(index), { icon: 'refresh-cw', variant: 'small' }),
+            button("Delete", async () => deleteResponse(index), { icon: 'trash', variant: 'small' })
+        );
+        parts.push(row(controls, S.actionRow));
+    });
+    if (chat.history.length === 0) {
+        parts.push(text("Ask about your story. The AI reads the document (or the chapters, selection and lorebook entries you pick below).", { style: S.muted }));
+    }
+    return parts;
+}
+
+function statusRow(): UIPart {
+    const info = statusInfo();
+    const hasOverride = chat.selectedContextText !== null || chat.chapterKeys.length > 0 || chat.loreIds.length > 0;
+    const content: UIPart[] = [
+        text(info.text, {
+            id: STATUS_ID,
+            markdown: false,
+            style: { color: info.color, fontSize: '0.82em', marginRight: '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: '1 1 auto' }
+        })
+    ];
+    if (hasOverride) {
+        content.push(button("", clearContextOverrides, { icon: 'x', variant: 'subtle', style: { width: '20px', height: '20px', padding: '0' } }));
+    }
+    if (chat.chapterKeys.length > 0) {
+        content.push(button("Prev chapters", togglePreviousContext, {
+            icon: chat.usePreviousContext ? 'check-square' : 'square', variant: 'small',
+            style: chat.usePreviousContext ? { color: COLOR.chapter, borderColor: COLOR.chapter } : {}
+        }));
+    }
+    content.push(
+        button(chapterButtonLabel(), async () => toggleDropdown('chapter'), {
+            icon: chat.dropdown === 'chapter' ? 'chevron-down' : 'chevron-up', variant: 'small',
+            style: chat.chapterKeys.length > 0 ? { color: COLOR.chapter, borderColor: COLOR.chapter } : {}
+        }),
+        button(loreButtonLabel(), async () => toggleDropdown('lore'), {
+            icon: chat.dropdown === 'lore' ? 'chevron-down' : 'chevron-up', variant: 'small',
+            style: chat.loreIds.length > 0 ? { color: COLOR.lore, borderColor: COLOR.lore } : {}
+        })
+    );
+    return row(content, { marginBottom: '2px', marginLeft: '4px', marginRight: '4px', justifyContent: 'space-between', gap: '4px' });
+}
+
+function chapterDropup(): UIPart {
+    const items: UIPart[] = [
+        button("Full Document", async () => {
+            chat.chapterKeys = [];
+            chat.selectedContextText = null;
+            chat.dropdown = 'none';
+            await afterSelectionChange("Targeting: Full Document");
+        }, { icon: chat.chapterKeys.length === 0 ? 'check' : 'file', variant: 'subtle', style: sx(S.dropupRow, chat.chapterKeys.length === 0 ? { fontWeight: 'bold', backgroundColor: COLOR.raised } : {}) })
+    ];
+    if (chat.chapterKeys.length > 0) {
+        items.push(button("Include earlier chapters as background", togglePreviousContext, {
+            icon: chat.usePreviousContext ? 'check-square' : 'square', variant: 'subtle', style: S.dropupRow
+        }));
+    }
+    if (chat.chapters.length === 0) {
+        items.push(text(`No chapters found (${chat.breakToken})`, { markdown: false, style: sx(S.muted, { padding: '6px 8px', fontStyle: 'italic' }) }));
+    }
+    for (const ch of chat.chapters) {
+        const checked = chat.chapterKeys.includes(ch.key);
+        const sole = checked && chat.chapterKeys.length === 1;
+        const name = ch.title.replace(/^(?:Chapter\s*\d*|Prologue\s*(?:\/\s*Introduction)?|Epilogue|Interlude)[:\s-]*/i, "").trim();
+        const full = name && name !== ch.label ? `${ch.label}: ${name}` : ch.label;
+        items.push(row([
+            button("", async () => {
+                chat.chapterKeys = checked
+                    ? chat.chapterKeys.filter((k: number) => k !== ch.key)
+                    : chat.chapters.filter((c: DetectedChapter) => c.key === ch.key || chat.chapterKeys.includes(c.key)).map((c: DetectedChapter) => c.key);
+                chat.selectedContextText = null;
+                const n = chat.chapterKeys.length;
+                await afterSelectionChange(n === 0 ? "Targeting: Full Document" : `Targeting ${n} Chapter${n > 1 ? "s" : ""}`);
+            }, { icon: checkIcon(checked ? 'all' : 'none'), variant: 'small', style: sx({ width: '28px', justifyContent: 'center', flexShrink: '0' }, checked ? { color: COLOR.chapter } : {}) }),
+            button(truncateLabel(full, 26), async () => {
+                chat.chapterKeys = [ch.key];
+                chat.selectedContextText = null;
+                chat.dropdown = 'none';
+                await afterSelectionChange(`Targeting: ${full}`);
+            }, { variant: 'subtle', style: sx(S.dropupRow, { flex: '1 1 auto', paddingLeft: '6px', overflow: 'hidden', textOverflow: 'ellipsis' },
+                checked ? { fontWeight: 'bold', color: sole ? COLOR.heading : COLOR.chapter } : {}, sole ? { backgroundColor: COLOR.raised } : {}) })
+        ], { gap: '4px', height: '28px' }));
+    }
+    return column(items, S.dropup);
+}
+
+function loreDropup(): UIPart {
+    const items: UIPart[] = [
+        button("None (no lorebook entries attached)", async () => {
+            chat.loreIds = [];
+            chat.dropdown = 'none';
+            await afterSelectionChange("No Lorebooks attached");
+        }, { icon: chat.loreIds.length === 0 ? 'check' : 'slash', variant: 'subtle', style: sx(S.dropupRow, chat.loreIds.length === 0 ? { fontWeight: 'bold', backgroundColor: COLOR.raised } : {}) })
+    ];
+    if (chat.loreEntries.length === 0) {
+        items.push(text("No lorebook entries found in story", { markdown: false, style: sx(S.muted, { padding: '6px 8px', fontStyle: 'italic' }) }));
+        return column(items, S.dropup);
+    }
+
+    const groups: { id: string; name: string; entries: LorebookEntry[] }[] = chat.loreCategories
+        .filter((c: LorebookCategory) => c && c.id)
+        .map((c: LorebookCategory) => ({ id: c.id, name: c.name || "Category", entries: [] as LorebookEntry[] }));
+    const uncategorized: LorebookEntry[] = [];
+    for (const entry of chat.loreEntries) {
+        if (!entry || !entry.id) continue;
+        const group = entry.category ? groups.find((g: { id: string }) => g.id === entry.category) : undefined;
+        if (group) group.entries.push(entry);
+        else uncategorized.push(entry);
+    }
+    if (uncategorized.length > 0) groups.push({ id: "uncategorized", name: "General / Uncategorized", entries: uncategorized });
+
+    for (const group of groups) {
+        if (group.entries.length === 0) continue;
+        const ids = group.entries.map((e: LorebookEntry) => e.id);
+        const all = ids.every((id: string) => chat.loreIds.includes(id));
+        const some = ids.some((id: string) => chat.loreIds.includes(id));
+        const toggleGroup = async (): Promise<void> => {
+            toggleLoreIds(ids, !all);
+            await afterSelectionChange(`${group.name}: ${all ? "Deselected" : "Selected"} (${ids.length} entries)`);
+        };
+        items.push(row([
+            button("", toggleGroup, { icon: checkIcon(all ? 'all' : some ? 'some' : 'none'), variant: 'small', style: sx({ width: '26px', justifyContent: 'center', flexShrink: '0' }, some ? { color: COLOR.lore } : {}) }),
+            button(`${group.name} (${ids.length})`, toggleGroup, { icon: 'folder', variant: 'subtle', style: sx(S.dropupRow, { flex: '1 1 auto', paddingLeft: '4px' }, some ? { fontWeight: 'bold', color: COLOR.lore } : {}) })
+        ], { gap: '4px', marginTop: '4px', backgroundColor: some ? COLOR.raised : 'transparent', borderRadius: '4px', padding: '0 2px' }));
+
+        for (const entry of group.entries) {
+            const checked = chat.loreIds.includes(entry.id);
+            const sole = checked && chat.loreIds.length === 1;
+            const name = lorebookEntryName(entry);
+            items.push(row([
+                button("", async () => {
+                    toggleLoreIds([entry.id], !checked);
+                    const n = chat.loreIds.length;
+                    await afterSelectionChange(n === 0 ? "No Lorebooks attached" : `Targeting ${n} Lorebook${n > 1 ? "s" : ""}`);
+                }, { icon: checkIcon(checked ? 'all' : 'none'), variant: 'small', style: sx({ width: '26px', justifyContent: 'center', flexShrink: '0' }, checked ? { color: COLOR.lore } : {}) }),
+                button(truncateLabel(name, 24), async () => {
+                    chat.loreIds = [entry.id];
+                    chat.dropdown = 'none';
+                    await afterSelectionChange(`Attached Lorebook: ${name}`);
+                }, { variant: 'subtle', style: sx(S.dropupRow, { flex: '1 1 auto', paddingLeft: '6px', overflow: 'hidden', textOverflow: 'ellipsis' },
+                    checked ? { fontWeight: 'bold', color: sole ? COLOR.heading : COLOR.lore } : {}) })
+            ], { gap: '4px', marginLeft: '12px' }));
+        }
+    }
+    return column(items, S.dropup);
+}
+
+function modelDropup(): UIPart {
+    return column(chat.models.map((model: ChatModel) => button(model.name, async () => {
+        chat.modelId = model.id;
+        chat.dropdown = 'none';
+        await api.v1.storage.set(MODEL_KEY, model.id);
+        await refreshActiveModel();
+        await refreshStatus();
+        await updatePanel();
+        await api.v1.ui.toast(`Model: ${chat.modelName}`, { type: "info" });
+    }, {
+        icon: model.id === chat.modelId ? 'check' : 'user', variant: 'subtle',
+        style: sx(S.dropupRow, model.id === chat.modelId ? { fontWeight: 'bold', backgroundColor: COLOR.raised } : {})
+    })), S.dropup);
+}
+
+function toolbarRow(): UIPart {
+    if (chat.generating) {
+        return row([
+            button(chat.stopRequested ? "Stopping..." : "Stop Generating", stopGeneration, {
+                id: "btn-stop-generating-primary", icon: 'stop-circle', variant: 'danger', disabled: chat.stopRequested, style: S.toolbarButton
+            })
+        ]);
+    }
+    return row([
+        button("Clear", clearChat, { icon: 'message-square', style: S.toolbarButton }),
+        button("Compact", compactChatHistory, { icon: 'message-circle', style: S.toolbarButton }),
+        button("Instruct", generateInstruction, { icon: 'terminal', style: S.toolbarButton }),
+        button(truncateLabel(chat.modelName, 9), async () => toggleDropdown('model'), {
+            icon: chat.dropdown === 'model' ? 'chevron-down' : 'chevron-up', style: S.toolbarButton
+        })
+    ]);
+}
+
+function inputRow(): UIPart {
+    return row([
+        {
+            type: 'textInput',
+            id: "chat-input-bar",
+            storageKey: INPUT_KEY,
+            placeholder: chat.generating ? "Generating response..." : "Type your message...",
+            onSubmit: (value: string) => { if (!chat.generating) handleSubmit(value).catch((err: any) => api.v1.log("ChatGLM: submit error: " + formatError(err))); },
+            disabled: chat.generating,
+            style: { flex: '1 1 0', marginRight: '0', paddingRight: '0' }
+        },
+        button("", chat.generating ? stopGeneration : openMultilineInputModal, {
+            id: "btn-input-action",
+            icon: chat.generating ? 'stop-circle' : 'edit-3',
+            variant: chat.generating ? 'danger' : 'default',
+            style: { width: '38px', height: '38px', marginLeft: '0', padding: '0', display: 'flex', alignItems: 'center', justifyContent: 'center' }
+        })
+    ]);
+}
+
+function getUiContent(): UIPart[] {
+    const parts: UIPart[] = [
+        column(messageViews(), { flex: '1 1 0', overflowY: 'auto', justifyContent: 'flex-start', padding: '4px 8px' }),
+        statusRow()
+    ];
+    if (chat.dropdown === 'chapter') parts.push(chapterDropup());
+    if (chat.dropdown === 'lore') parts.push(loreDropup());
+    if (chat.dropdown === 'model') parts.push(modelDropup());
+    if (chat.hasCutOffResponse && !chat.generating) {
+        parts.push(row([
+            button("Continue Response", continueResponse, { icon: 'play', variant: 'primary', style: { flex: '1 1 auto', height: '30px', fontSize: '0.85em', justifyContent: 'center' } }),
+            button("", async () => { chat.hasCutOffResponse = false; await updatePanel(); }, { icon: 'x', variant: 'small', style: { width: '28px', height: '30px', justifyContent: 'center' } })
+        ], { marginBottom: '6px', gap: '4px' }));
+    }
+    parts.push(toolbarRow(), inputRow());
+    return parts;
+}
+
+// --- Rendering ---
+
+let isPanelUpdateInProgress = false;
+let hasPendingPanelUpdate = false;
+
+/** Coalesced: while one update is in flight, further calls collapse into one follow-up update */
+async function updatePanel(): Promise<void> {
+    if (isPanelUpdateInProgress) {
+        hasPendingPanelUpdate = true;
+        return;
+    }
+    isPanelUpdateInProgress = true;
+    try {
+        do {
+            hasPendingPanelUpdate = false;
+            await api.v1.ui.update([{
+                type: 'sidebarPanel',
+                id: PANEL_ID,
+                name: "Chat",
+                iconId: 'message-square',
+                content: [column(getUiContent(), { height: '100%', display: 'flex', flexDirection: 'column' })]
+            }]);
+        } while (hasPendingPanelUpdate);
+    } catch (err: any) {
+        api.v1.log("ChatGLM: error updating panel: " + formatError(err));
+    } finally {
+        isPanelUpdateInProgress = false;
+    }
+}
+
+/** Refreshes only the status line (used by the background poll so typing isn't disturbed) */
+async function paintStatus(): Promise<void> {
+    const info = statusInfo();
+    try {
+        await api.v1.ui.updateParts([{ type: 'text', id: STATUS_ID, text: info.text, style: { color: info.color, fontSize: '0.82em', marginRight: '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: '1 1 auto' } }]);
+    } catch {
+        // not mounted yet
+    }
+}
+
+/** Writer's Toolbox option and editor context-menu button ("Add to Chat") */
+async function registerStaticExtensions(): Promise<void> {
+    try {
+        // ui.update creates them if missing and survives the script being disabled/re-enabled
+        await api.v1.ui.update([
+            {
+                type: 'toolboxOption',
+                id: "chat-toolbox-add-context",
+                name: "Add to Chat",
+                description: "Select this as context for the sidebar chat.",
+                iconId: 'message-square',
+                callback: ({ text: selected }: { selection: DocumentSelection; text: string }) => {
+                    setSelectedContext(selected).catch((err: any) => api.v1.log("ChatGLM: add to chat failed: " + formatError(err)));
+                    // Returning the same text leaves the story unchanged
+                    return { text: selected };
+                }
+            },
+            {
+                type: 'contextMenuButton',
+                id: "chat-context-menu-add-context",
+                text: "Add to Chat",
+                callback: ({ selection }: { selection: DocumentSelection }) => {
+                    (async () => {
+                        if (!selection || selection.from === undefined) {
+                            await api.v1.ui.toast("Issue with text selection. Please reselect it.", { type: "warning" });
+                            return;
+                        }
+                        await setSelectedContext(await api.v1.document.textFromSelection(selection));
+                    })().catch(async (err: any) => {
+                        await api.v1.ui.toast("Error adding selection: " + formatError(err), { type: "error" });
+                    });
+                }
+            }
+        ]);
+    } catch (err: any) {
+        api.v1.log("ChatGLM: static extensions registration error: " + formatError(err));
+    }
+}
+
+// --- ChatGLM Startup ---
+
+const STATUS_POLL_MS = 15000;
+
+/**
+ * Typing in the story has no hook, so the status line is refreshed on a timer. It only
+ * re-tokenizes when the document actually changed, and only repaints the status text (a full
+ * re-render every 15s could interrupt typing in the chat box).
+ */
+function startStatusPoll(): void {
+    if (chat.pollStarted) return;
+    chat.pollStarted = true;
+    (async () => {
+        while (true) {
+            await api.v1.timers.sleep(STATUS_POLL_MS);
+            if (chat.generating) continue;
+            try {
+                const signature = documentSignature(await getDocumentSections());
+                if (signature === chat.docSignature) continue;
+                chat.docSignature = signature;
+                await refreshStatus();
+                await paintStatus();
+            } catch (err: any) {
+                api.v1.log("ChatGLM: status poll error: " + formatError(err));
+            }
+        }
+    })().catch((err: any) => api.v1.log("ChatGLM: status poll stopped: " + formatError(err)));
+}
+
+async function initChatGLM(): Promise<void> {
+    try {
+        await registerStaticExtensions();
+        await loadPersistedState();
+        await updatePanel();
+        await fetchLorebookData();
+        await refreshActiveModel();
+        chat.docSignature = documentSignature(await getDocumentSections());
+        await refreshStatus();
+        await updatePanel();
+        await api.v1.ui.openPanel(PANEL_ID);
+        startStatusPoll();
+        api.v1.log("ChatGLM v2 initialized");
+    } catch (err: any) {
+        api.v1.error("ChatGLM: initialization failed", err);
+    }
+}
+
+initChatGLM().catch((err: any) => api.v1.error("ChatGLM: init error", err));

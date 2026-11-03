@@ -1,0 +1,8 @@
+# Author's examples folder for the agent 
+/examples
+
+# Archives of previous releases
+/archive
+
+# UCCDS + NovelAI types, fetched by scripts/deps.js
+/.deps

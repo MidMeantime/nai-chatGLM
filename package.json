@@ -1,0 +1,10 @@
+{
+  "name": "chat-glm-edit",
+  "version": "2.1.0",
+  "description": "ChatGLM v2 NovelAI script (fork). Chapters and build tooling come from UCCDS, fetched into .deps/ on first run.",
+  "scripts": {
+    "setup": "node scripts/deps.js",
+    "build": "node scripts/build.js",
+    "test": "node scripts/test.js && node scripts/test-uccds.js"
+  }
+}
