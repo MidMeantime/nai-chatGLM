@@ -4,9 +4,9 @@ id: a61df34f-dcd4-476c-891a-afcadd6b1c61
 name: ChatGLM
 createdAt: 1766448000000
 updatedAt: 1792846800000
-version: 2.0.1
+version: 2.1.0
 author: piersf
-description: A chat in the sidebar to workshop your story with the AI. Chats are saved per story.
+description: "A chat in the sidebar to workshop your story with the AI. Chats are saved per story. Chapters come from the UCCDS dependency script when it is installed and enabled (its Config tab sets what a chapter is); otherwise the built-in detection below is used."
 memoryLimit: 16
 config:
   - name: system_prompt_assistant
@@ -136,20 +136,21 @@ config:
     prettyName: Chapter Break Token
     type: string
     default: "***"
-    description: "Token on its own line that separates chapters or scenes (default: ***)."
+    description: "Token on its own line that separates chapters or scenes (default: ***). Only used when UCCDS is not installed."
   - name: chapter_title_bracketed
     prettyName: Detect Bracketed Chapter Titles
     type: boolean
     default: true
-    description: "Detect bracketed headers like [ Chapter 1: Title ]. Bracketed metadata such as [ Author: X; Tags: Y ] is always ignored. Same rules as Chapter Linter."
+    description: "Detect bracketed headers like [ Chapter 1: Title ]. Bracketed metadata such as [ Author: X; Tags: Y ] is always ignored. Same rules as Chapter Linter. Only used when UCCDS is not installed."
 ---*/
 
 // ChatGLM v2 (fork). Built from src/* + Editorial/shared/chapter-headers.ts (see scripts/build.js).
 
-// --- Shared Chapter Header Toolkit (Editorial scripts) ---
-// One parser for chapter headers, used by Chapter Linter and Markdown Manager.
-// Source of truth: Editorial/shared/chapter-headers.ts. Bundled into each script at build time,
-// so every name here is prefixed with `ch` / `CH_` to stay clear of script-level names.
+// --- UCCDS header parser ---
+// Parses one paragraph into a chapter header (markdown / [bracket] / "Chapter X" keyword lines,
+// prologue / epilogue / interlude / Part-Book-Act kinds, strict Roman numerals, number words, dividers).
+// Same parser as Chapter Linter, Markdown Manager and ChatGLM (this file is the source; `npm run sync`
+// pushes it to Editorial/shared). Header words are configurable (see chGrammar). Names are prefixed `ch` / `CH_`.
 
 /** What a header introduces. 'title' = a header with no keyword ("# The Gathering", "[The Long Night]") */
 type ChapterKind = 'chapter' | 'title' | 'prologue' | 'epilogue' | 'interlude' | 'division';
@@ -165,6 +166,16 @@ interface HeaderDetectionOptions {
     breakToken?: string;
     /** Only the breakToken counts as a divider (a lone --- stays text) */
     onlyBreakToken?: boolean;
+    /**
+     * Extra words that start a numbered chapter, like "Chapter" (e.g. "Section", "Episode").
+     * Case-insensitive; multi-word is fine ("Side Story"). A word listed here stops being a
+     * Part/Book word or an unnumbered word, so ["Section"] turns "Section 3" into a chapter.
+     */
+    chapterKeywords?: string[];
+    /** Extra words that group chapters, like "Part" / "Book" (e.g. "Saga", "Season") */
+    divisionKeywords?: string[];
+    /** Extra words for unnumbered sections, like "Prologue" / "Epilogue" (e.g. "Intro", "Afterword") */
+    specialKeywords?: string[];
 }
 
 interface ParsedHeader {
@@ -202,26 +213,140 @@ const CH_NUMBER_WORD = "(?:(?:twenty|thirty|forty|fifty|sixty|seventy|eighty|nin
 // Only well-formed numerals, so words like "Mill" or "Mild" are never read as numbers
 const CH_ROMAN = "(?=[MDCLXVI])M{0,3}(?:CM|CD|D?C{0,3})(?:XC|XL|L?X{0,3})(?:IX|IV|V?I{0,3})";
 const CH_NUMBER = `(?:\\d+|${CH_ROMAN}|${CH_NUMBER_WORD})`;
-const CH_CHAPTER_KEYWORD = "(?:Chapter|Ch\\.?)";
-const CH_DIVISION_KEYWORD = "(?:Act|Book|Part|Volume|Section|Arc)";
-const CH_KEYWORD = `(?:${CH_CHAPTER_KEYWORD}|${CH_DIVISION_KEYWORD})`;
 const CH_LABEL_END = `(?=\\s|${CH_SEP}|,|$)`;
 
-// A plain line that is ONLY a label (optionally + separator + title). Anchored to the whole line
-// so prose like "Part of me wanted..." is never mistaken for a header.
+// Built-in header words. Users add their own through HeaderDetectionOptions (see chGrammar).
+// A trailing "." is optional ("Ch." also matches "Ch").
+const CH_BUILTIN_CHAPTER_WORDS: string[] = ["Chapter", "Ch."];
+const CH_BUILTIN_DIVISION_WORDS: string[] = ["Act", "Book", "Part", "Volume", "Section", "Arc"];
 // Unnumbered special sections. Prelude counts as a prologue, Interlude sits between chapters.
-const CH_SPECIAL = "(?:Prologue|Prelude|Epilogue|Interlude)";
-// A comma only counts when another label follows it ("Part 1, Chapter 3"), never before prose.
-const CH_KEYWORD_LINE = new RegExp(
-    `^(?:${CH_KEYWORD}(?:\\s+${CH_NUMBER})?|${CH_SPECIAL})(?:\\s*${CH_SEP}.*|\\s*,\\s*(?:${CH_KEYWORD}|${CH_SPECIAL})${CH_LABEL_END}.*)?$`, 'i'
-);
-// Leading "Chapter 4", "Part II", "Ch. Twenty-One" (number optional). Groups: 1 keyword, 2 number
-const CH_LABEL_PREFIX = new RegExp(`^(${CH_KEYWORD})(?:\\s+(${CH_NUMBER}))?${CH_LABEL_END}`, 'i');
-const CH_DIVISION_TEST = new RegExp(`^${CH_DIVISION_KEYWORD}$`, 'i');
-// Keys that may label a bracketed header, e.g. [Chapter 3: ...], [Title: ...]
-// Stacked labels count too: [Book II - Chapter IV: Rain], [Part 1, Chapter 3: X]
-const CH_BRACKET_LABEL = `(?:${CH_KEYWORD}(?:\\s+${CH_NUMBER})?|Title|${CH_SPECIAL})`;
-const CH_BRACKET_KEY = new RegExp(`^${CH_BRACKET_LABEL}(?:\\s*(?:${CH_SEP}|,)\\s*${CH_BRACKET_LABEL})*$`, 'i');
+const CH_BUILTIN_SPECIAL_WORDS: string[] = ["Prologue", "Prelude", "Epilogue", "Interlude"];
+const CH_MAX_CUSTOM_WORDS = 40;
+const CH_MAX_WORD_LENGTH = 40;
+
+/** The regexes for one set of header words */
+interface ChGrammar {
+    /** A plain line that is ONLY a label (optionally + separator + title) */
+    keywordLine: RegExp;
+    /** Leading "Chapter 4", "Part II", "Ch. Twenty-One" (number optional). Groups: 1 keyword, 2 number */
+    labelPrefix: RegExp;
+    /** Is this keyword a Part/Book-style word? */
+    divisionTest: RegExp;
+    /** Keys that may label a bracketed header: [Chapter 3: ...], [Title: ...], [Book II - Chapter IV: Rain] */
+    bracketKey: RegExp;
+    /** "Prologue: The Fall". Groups: 1 keyword, 2 rest */
+    special: RegExp;
+}
+
+/** Comparison key for a header word: lowercase, single spaces, no trailing "." */
+function chWordKey(word: string): string {
+    return (word || "").trim().replace(/\s+/g, " ").replace(/\.$/, "").toLowerCase();
+}
+
+/**
+ * Regex source for one header word, or null when it can't be one: empty, too long, or containing
+ * digits / brackets / separators that would clash with numbers and titles.
+ */
+function chWordPattern(word: string): string | null {
+    const w = (word || "").trim().replace(/\s+/g, " ");
+    if (!w || w.length > CH_MAX_WORD_LENGTH) return null;
+    if (/[\d\[\]:;|,\\(){}*+?^$#\u2013\u2014]/.test(w)) return null;
+    if (/^[-.'\s]+$/.test(w)) return null;
+    const dotted = w.endsWith(".");
+    const core = dotted ? w.slice(0, -1) : w;
+    const escaped = core.replace(/[.\-'"]/g, (c: string) => `\\${c}`).replace(/ /g, "\\s+");
+    return dotted ? `${escaped}\\.?` : escaped;
+}
+
+/** Turns a list of words into one alternation (longest first); never matches when the list is empty */
+function chAlternation(words: string[]): string {
+    const patterns: string[] = [];
+    for (const w of words) {
+        const p = chWordPattern(w);
+        if (p && patterns.indexOf(p) === -1) patterns.push(p);
+    }
+    if (patterns.length === 0) return "(?!)";
+    patterns.sort((a: string, b: string) => b.length - a.length);
+    return `(?:${patterns.join("|")})`;
+}
+
+/** Cleans a user word list: trims, drops invalid words and duplicates, caps its size */
+function chCleanWords(words: string[] | undefined): string[] {
+    const out: string[] = [];
+    const seen: Record<string, boolean> = {};
+    for (const w of Array.isArray(words) ? words : []) {
+        if (typeof w !== 'string' || chWordPattern(w) === null) continue;
+        const key = chWordKey(w);
+        if (!key || seen[key]) continue;
+        seen[key] = true;
+        out.push(w.trim().replace(/\s+/g, " "));
+        if (out.length >= CH_MAX_CUSTOM_WORDS) break;
+    }
+    return out;
+}
+
+/**
+ * Merges the user's words into the built-in lists. A user word moves out of any other list,
+ * and between the user's own lists chapter beats division beats special.
+ */
+function chResolveWords(options?: HeaderDetectionOptions): { chapter: string[]; division: string[]; special: string[] } {
+    const o: HeaderDetectionOptions = options || CH_DEFAULT_DETECTION;
+    const userChapter = chCleanWords(o.chapterKeywords);
+    const userDivision = chCleanWords(o.divisionKeywords);
+    const userSpecial = chCleanWords(o.specialKeywords);
+    const keys = (list: string[]): string[] => list.map((w: string) => chWordKey(w));
+    const chapterKeys = keys(userChapter);
+    const divisionKeys = keys(userDivision).filter((k: string) => chapterKeys.indexOf(k) === -1);
+    const specialKeys = keys(userSpecial).filter((k: string) => chapterKeys.indexOf(k) === -1 && divisionKeys.indexOf(k) === -1);
+    const without = (list: string[], ...remove: string[][]): string[] =>
+        list.filter((w: string) => !remove.some((r: string[]) => r.indexOf(chWordKey(w)) !== -1));
+    return {
+        chapter: [...without(CH_BUILTIN_CHAPTER_WORDS, divisionKeys, specialKeys), ...userChapter],
+        division: [...without(CH_BUILTIN_DIVISION_WORDS, chapterKeys, specialKeys), ...userDivision.filter((w: string) => divisionKeys.indexOf(chWordKey(w)) !== -1)],
+        special: [...without(CH_BUILTIN_SPECIAL_WORDS, chapterKeys, divisionKeys), ...userSpecial.filter((w: string) => specialKeys.indexOf(chWordKey(w)) !== -1)]
+    };
+}
+
+function chBuildGrammar(chapterWords: string[], divisionWords: string[], specialWords: string[]): ChGrammar {
+    const chapter = chAlternation(chapterWords);
+    const division = chAlternation(divisionWords);
+    const special = chAlternation(specialWords);
+    const keyword = `(?:${chapter}|${division})`;
+    // Anchored to the whole line so prose like "Part of me wanted..." is never mistaken for a header.
+    // A comma only counts when another label follows it ("Part 1, Chapter 3"), never before prose.
+    const keywordLine = new RegExp(
+        `^(?:${keyword}(?:\\s+${CH_NUMBER})?|${special})(?:\\s*${CH_SEP}.*|\\s*,\\s*(?:${keyword}|${special})${CH_LABEL_END}.*)?$`, 'i'
+    );
+    const bracketLabel = `(?:${keyword}(?:\\s+${CH_NUMBER})?|Title|${special})`;
+    return {
+        keywordLine,
+        labelPrefix: new RegExp(`^(${keyword})(?:\\s+(${CH_NUMBER}))?${CH_LABEL_END}`, 'i'),
+        divisionTest: new RegExp(`^${division}$`, 'i'),
+        bracketKey: new RegExp(`^${bracketLabel}(?:\\s*(?:${CH_SEP}|,)\\s*${bracketLabel})*$`, 'i'),
+        special: new RegExp(`^(${special})${CH_LABEL_END}\\s*${CH_SEP}?\\s*(.*)$`, 'i')
+    };
+}
+
+const CH_GRAMMAR_CACHE: Record<string, ChGrammar> = {};
+
+/** The grammar for a set of options, built once per distinct word set */
+function chGrammar(options?: HeaderDetectionOptions): ChGrammar {
+    const words = chResolveWords(options);
+    const cacheKey = JSON.stringify(words);
+    let g = CH_GRAMMAR_CACHE[cacheKey];
+    if (!g) {
+        g = chBuildGrammar(words.chapter, words.division, words.special);
+        CH_GRAMMAR_CACHE[cacheKey] = g;
+    }
+    return g;
+}
+
+/** True when `keyword` is one of the four built-in special words (Prologue, Prelude, Epilogue, Interlude) */
+function chIsBuiltinSpecial(keyword: string): boolean {
+    const key = chWordKey(keyword);
+    return CH_BUILTIN_SPECIAL_WORDS.some((w: string) => chWordKey(w) === key);
+}
+
 // A bare number with no keyword, e.g. the "1" in "[ 1: Sandor ]". Roman numerals must be
 // uppercase here so short words like "Mid" or "Ivy" aren't read as numbers.
 const CH_BARE_NUMBER_PATTERNS: RegExp[] = [
@@ -317,7 +442,7 @@ function chMatchBareNumberPrefix(text: string, requireWhole: boolean = false): n
  * Inner text of a bracketed header, or null when the brackets hold something else
  * (NovelAI author's notes / ATTG metadata such as "[ Author: X; Tags: Y ]").
  */
-function chExtractBracketBody(text: string): string | null {
+function chExtractBracketBody(text: string, grammar: ChGrammar = chGrammar()): string | null {
     const m = text.match(/^\[\s*([^\[\]\n]+?)\s*\]$/);
     if (!m) return null;
     const inner = m[1];
@@ -325,8 +450,8 @@ function chExtractBracketBody(text: string): string | null {
     const keyMatch = inner.match(/^([^:]+?)\s*:/);
     if (keyMatch) {
         const key = keyMatch[1].trim();
-        if (!CH_BRACKET_KEY.test(key) && !chMatchBareNumberPrefix(key, true)) return null;
-    } else if (/[.!?\u2026]["'\u201D\u2019]?$/.test(inner) && !CH_KEYWORD_LINE.test(inner)) {
+        if (!grammar.bracketKey.test(key) && !chMatchBareNumberPrefix(key, true)) return null;
+    } else if (/[.!?\u2026]["'\u201D\u2019]?$/.test(inner) && !grammar.keywordLine.test(inner)) {
         // "[He looked away.]" is an aside, not a title. "[Chapter 7.]" still counts.
         return null;
     }
@@ -334,10 +459,10 @@ function chExtractBracketBody(text: string): string | null {
 }
 
 /** "Prologue: The Fall" -> { kind: 'prologue', keyword: 'Prologue', rest: 'The Fall' } */
-function chMatchSpecial(text: string): { kind: ChapterKind; keyword: string; rest: string } | null {
-    const m = text.match(new RegExp(`^(${CH_SPECIAL})${CH_LABEL_END}\\s*${CH_SEP}?\\s*(.*)$`, 'i'));
+function chMatchSpecial(text: string, grammar: ChGrammar = chGrammar()): { kind: ChapterKind; keyword: string; rest: string } | null {
+    const m = text.match(grammar.special);
     if (!m) return null;
-    const lower = m[1].toLowerCase();
+    const lower = chWordKey(m[1]);
     const kind: ChapterKind = lower === 'epilogue' ? 'epilogue' : lower === 'interlude' ? 'interlude' : 'prologue';
     return { kind, keyword: m[1], rest: m[2] };
 }
@@ -393,6 +518,7 @@ function chNotHeader(): ParsedHeader {
 function chParseHeader(raw: string, options: HeaderDetectionOptions = CH_DEFAULT_DETECTION): ParsedHeader {
     const result = chNotHeader();
     if (!raw) return result;
+    const grammar = chGrammar(options);
     let working = raw.trim();
     if (!working || chIsDivider(working, options.breakToken, options.onlyBreakToken)) return result;
 
@@ -413,14 +539,14 @@ function chParseHeader(raw: string, options: HeaderDetectionOptions = CH_DEFAULT
     } else if (options.detectionMode === 'auto') {
         if (working.startsWith("[")) {
             if (options.detectBracketedTitles) {
-                body = chExtractBracketBody(working);
+                body = chExtractBracketBody(working, grammar);
                 result.syntax = 'bracket';
             }
         } else {
             // Keyword lines, optionally wrapped in emphasis: "Chapter IV: Echoes", "**Part Two**"
             const emphasis = working.match(/^(\*\*|__|\*|_)(.+)\1$/);
             const candidate = (emphasis ? emphasis[2] : working).trim();
-            if (CH_KEYWORD_LINE.test(candidate)) {
+            if (grammar.keywordLine.test(candidate)) {
                 body = candidate;
                 result.syntax = 'keyword';
             }
@@ -433,7 +559,7 @@ function chParseHeader(raw: string, options: HeaderDetectionOptions = CH_DEFAULT
     let rest = full.replace(/^Title\s*:\s*/i, '');
     let labelEnd = 0; // characters of `rest` (pre-strip) that belong to the label
 
-    const special = chMatchSpecial(rest);
+    const special = chMatchSpecial(rest, grammar);
     if (special) {
         result.kind = special.kind;
         result.keyword = special.keyword;
@@ -445,7 +571,7 @@ function chParseHeader(raw: string, options: HeaderDetectionOptions = CH_DEFAULT
         const original = rest;
         let consumed = 0;
         let strippedLabel = false;
-        let label = rest.match(CH_LABEL_PREFIX);
+        let label = rest.match(grammar.labelPrefix);
         while (label) {
             let after = rest.slice(label[0].length);
             let numberText = label[2] || "";
@@ -464,7 +590,7 @@ function chParseHeader(raw: string, options: HeaderDetectionOptions = CH_DEFAULT
                     }
                 }
             }
-            const isDivision = CH_DIVISION_TEST.test(label[1]);
+            const isDivision = grammar.divisionTest.test(label[1]);
             // Remember a division written before the chapter on the same line ("Book 2: Chapter 3")
             if (!isDivision && result.kind === 'division' && strippedLabel) {
                 result.divisionLabel = original.slice(0, labelEnd).trim();
@@ -481,10 +607,10 @@ function chParseHeader(raw: string, options: HeaderDetectionOptions = CH_DEFAULT
             consumed += sepLen;
             rest = after.slice(sepLen);
             strippedLabel = true;
-            label = rest.match(CH_LABEL_PREFIX);
+            label = rest.match(grammar.labelPrefix);
         }
         // "Act II: Prologue" / "Part 1, Interlude": a special section inside a division
-        const innerSpecial = strippedLabel && result.kind === 'division' ? chMatchSpecial(rest) : null;
+        const innerSpecial = strippedLabel && result.kind === 'division' ? chMatchSpecial(rest, grammar) : null;
         if (innerSpecial) {
             result.kind = innerSpecial.kind;
             result.keyword = innerSpecial.keyword;
@@ -575,6 +701,507 @@ function chCountWords(str: string): number {
     return count;
 }
 
+// --- UCCDS shared types (used by both the embedded core and the dependency client) ---
+// Everything here is a plain, serializable shape so chapter results can travel between scripts
+// through api.v1.messaging. Names are prefixed `Uccds` / `UCCDS_` to stay clear of script-level names.
+
+/** Version of the message protocol between the UCCDS dependency script and its clients */
+const UCCDS_PROTOCOL = 1;
+/** Messaging channel every UCCDS message uses */
+const UCCDS_CHANNEL = "uccds";
+
+/**
+ * What a chapter is.
+ * - chapter / title / prologue / epilogue / interlude / division: from a detected header
+ *   ('title' = a header with no keyword, like "# The Gathering")
+ * - opening: text before the first header
+ * - untitled: a chapter with no header (split on dividers, or the whole story when it has no headers)
+ */
+type UccdsChapterKind = 'chapter' | 'title' | 'prologue' | 'epilogue' | 'interlude' | 'division' | 'opening' | 'untitled';
+
+/** A parsed header line. Same shape as the parser's ParsedHeader, written out so the client needs no parser. */
+interface UccdsHeader {
+    isHeader: boolean;
+    syntax: 'markdown' | 'bracket' | 'keyword' | null;
+    /** Markdown heading level (1-6); 0 for bracket/keyword headers */
+    level: number;
+    kind: 'chapter' | 'title' | 'prologue' | 'epilogue' | 'interlude' | 'division';
+    /** Label exactly as written, minus trailing separator: "Chapter 3", "Part 1: Chapter 3", "IV", "" */
+    labelText: string;
+    /** Innermost keyword ("Chapter", "Part", "Prologue"); "" for bare numbers and titles */
+    keyword: string;
+    /** Innermost number as written ("IV", "8", "Twenty-One"); "" when there is none */
+    numberText: string;
+    /** Innermost number as a value, or null */
+    number: number | null;
+    /** Title text after the label: "The Dark Forest"; "" when the header is only a label */
+    cleanName: string;
+    /** The paragraph started with its own divider line ("***\n# Chapter 1") */
+    hasEmbeddedDivider: boolean;
+    /** Division written before the chapter on the same line: "Book 2" in "Book 2: Chapter 3" */
+    divisionLabel: string;
+    divisionNumber: number | null;
+}
+
+/**
+ * Everything that decides what counts as a chapter. All fields have defaults (UCCDS_DEFAULT_SETTINGS);
+ * scripts usually expose them as config options (see config-snippet.yaml).
+ */
+interface UccdsSettings {
+    /** 'auto' = markdown headings, [bracketed] titles and standalone "Chapter X" lines; 'markdown_headings' = # lines only */
+    headerSyntax: 'auto' | 'markdown_headings';
+    /** Detect [Chapter 1: Title] / [Title] headers. NovelAI metadata like [ Author: X; Tags: Y ] is always ignored */
+    detectBracketedTitles: boolean;
+    /** Scene/chapter divider recognised besides *** / --- / ___ */
+    breakToken: string;
+    /** Only breakToken counts as a divider (a lone --- stays normal text) */
+    onlyBreakToken: boolean;
+    /**
+     * Where chapters start:
+     * - 'headers': at chapter headers; dividers inside a chapter are scene breaks (default)
+     * - 'headers_and_dividers': at headers, and at any divider that isn't directly above a header
+     * - 'dividers': only at dividers; a header right under a divider names that chapter
+     */
+    boundaryMode: 'headers' | 'headers_and_dividers' | 'dividers';
+    /** When the story has no headers at all: one 'untitled' chapter, or split it on dividers */
+    noHeaderFallback: 'single' | 'dividers';
+    /** Text before the first header: its own 'opening' chapter, or left out of the chapter list */
+    openingText: 'chapter' | 'ignore';
+    /** Part / Book / Act headers: their own unnumbered 'division' entries that group the chapters under them, or plain numbered chapters */
+    divisionHeaders: 'separate' | 'chapter';
+    /** `sequence` numbering across Books/Parts: restart at 1 in each, continuous, or 'auto' (restart only if the story already does) */
+    numbering: 'auto' | 'restart' | 'continuous';
+    // The user's own header words, added to the built-in ones. Case-insensitive, multi-word allowed.
+    // A word moves out of the built-in list it was in: ['Section'] makes "Section 3" a chapter
+    // instead of a Part. In request overrides, a list replaces the user's list (it doesn't add to it).
+    /** Start a numbered chapter, like "Chapter" (e.g. Section, Episode, Scene) */
+    chapterKeywords: string[];
+    /** Group chapters, like "Part" / "Book" (e.g. Saga, Season) */
+    divisionKeywords: string[];
+    /**
+     * Unnumbered sections, like "Prologue" (e.g. Intro, Foreword, Afterword). Their kind follows
+     * their place: before the first numbered chapter 'prologue', after the last 'epilogue', else 'interlude'
+     */
+    specialKeywords: string[];
+}
+
+/** One chapter (or division / opening text) of the story */
+interface UccdsChapter {
+    /** Position in the returned list (0-based) */
+    index: number;
+    /** Stable key: the header's section id, or the first section id when there is no header */
+    key: number;
+    kind: UccdsChapterKind;
+    /** Full display title: "Chapter 3: The Fall", "Prologue", "Book 2: Return", "The Gathering" */
+    title: string;
+    /** Title text without the label ("The Fall"); "" when untitled */
+    name: string;
+    /** Short label: "Ch. 3", "Prologue", "Book 2", "Opening" */
+    label: string;
+    /** Chapter number as written; unnumbered chapters get previous + 1. Null for specials, divisions and opening text */
+    number: number | null;
+    /** Running chapter count (1, 2, 3...), restarting per Book/Part when `numbering` says so. Null where `number` is null */
+    sequence: number | null;
+    /** The Book/Part/Act this chapter sits in ("Book 2"), or "" */
+    division: string;
+    /** The parsed header, or null for opening/untitled chapters */
+    header: UccdsHeader | null;
+    /** Header paragraph as written (embedded divider line removed); "" when there is none */
+    rawHeader: string;
+    /** Section id of the header paragraph, or null */
+    headerSectionId: number | null;
+    /** First section of the chapter (the divider above the header, when there is one) */
+    startSectionId: number;
+    /** Last section of the chapter */
+    endSectionId: number;
+    /** Every section id in the chapter, in order: boundary divider, header, body */
+    sectionIds: number[];
+    /** Body section ids (no boundary divider, no header). Inner scene-break dividers stay */
+    bodySectionIds: number[];
+    /** Body paragraphs, in order. Empty when the request asked for no text */
+    paragraphs: string[];
+    wordCount: number;
+    charCount: number;
+}
+
+interface UccdsResult {
+    chapters: UccdsChapter[];
+    /** The settings the result was made with (defaults filled in) */
+    settings: UccdsSettings;
+    /** At least one header was found */
+    hasHeaders: boolean;
+    /** `sequence` restarts in each Book/Part */
+    restartsPerDivision: boolean;
+    /** Fingerprint of the document + settings; equal signatures mean an identical result */
+    signature: string;
+    sectionCount: number;
+    totalWords: number;
+    /** False when the request asked for no text (paragraphs are empty) */
+    includesText: boolean;
+}
+
+/** Plain section shape the core works on. Build it from api.v1.document.scan() */
+interface UccdsSection {
+    sectionId: number;
+    text: string;
+}
+
+// --- Dependency protocol (client <-> UCCDS dependency script, channel "uccds") ---
+
+interface UccdsDetectRequest {
+    /** Overrides applied on top of the settings the user chose in the UCCDS dependency's config */
+    settings?: Partial<UccdsSettings>;
+    /** Ignore the dependency's config and use defaults + `settings` only. Default false */
+    ignoreUserConfig?: boolean;
+    /** Include chapter paragraphs. Default true; false returns ids, titles and counts only */
+    includeText?: boolean;
+    /** Signature from an earlier result: when nothing changed the reply is { unchanged: true } and no chapters */
+    sinceSignature?: string;
+}
+
+type UccdsRequestType = 'uccds:ping' | 'uccds:detect' | 'uccds:parseHeader' | 'uccds:getSettings' | 'uccds:subscribe' | 'uccds:unsubscribe';
+
+interface UccdsRequestMessage {
+    type: UccdsRequestType;
+    requestId: string;
+    protocol: number;
+    payload?: any;
+}
+
+interface UccdsReplyMessage {
+    type: 'uccds:reply';
+    requestId: string;
+    protocol: number;
+    ok: boolean;
+    error?: string;
+    data?: any;
+}
+
+/** Sent by the dependency: 'uccds:ready' when it loads, 'uccds:changed' to subscribers when the chapters change */
+interface UccdsEventMessage {
+    type: 'uccds:ready' | 'uccds:changed';
+    protocol: number;
+    version: string;
+    signature?: string;
+    chapterCount?: number;
+}
+
+interface UccdsServiceInfo {
+    /** The dependency's script id (for targeted messages) */
+    scriptId: string;
+    version: string;
+    protocol: number;
+}
+
+// --- UCCDS result helpers (pure; shared by the embedded core and the dependency client) ---
+
+/** Divider check for helpers: *** / --- / ___ (spaced or not), – – –, — — —, or the given token */
+function uccdsLooksLikeDivider(text: string, breakToken?: string, onlyBreakToken: boolean = false): boolean {
+    const t = (text || "").trim();
+    if (!t) return false;
+    if (breakToken && breakToken.trim() && t === breakToken.trim()) return true;
+    if (onlyBreakToken && breakToken && breakToken.trim()) return false;
+    if (t === "– – –" || t === "— — —") return true;
+    return /^(?:\*\s*){3,}$/.test(t) || /^(?:-\s*){3,}$/.test(t) || /^(?:_\s*){3,}$/.test(t);
+}
+
+/**
+ * A chapter's text. By default the body only, paragraphs joined with "\n" (NovelAI's own line breaks).
+ * dropDividers removes scene-break lines (pass the result's settings.breakToken for custom tokens).
+ */
+function uccdsChapterText(chapter: UccdsChapter, options?: { includeHeader?: boolean; separator?: string; dropDividers?: boolean; breakToken?: string; dropBlank?: boolean }): string {
+    const o = options || {};
+    const sep = typeof o.separator === 'string' ? o.separator : "\n";
+    let paras = chapter.paragraphs;
+    if (o.dropDividers) paras = paras.filter((p: string) => !uccdsLooksLikeDivider(p, o.breakToken));
+    if (o.dropBlank) paras = paras.filter((p: string) => p.trim().length > 0);
+    const body = paras.join(sep);
+    if (o.includeHeader && chapter.rawHeader) return body ? `${chapter.rawHeader}${sep}${body}` : chapter.rawHeader;
+    return body;
+}
+
+/** The chapter that holds a section id, or null */
+function uccdsChapterAt(result: UccdsResult, sectionId: number): UccdsChapter | null {
+    for (const ch of result.chapters) {
+        if (ch.sectionIds.indexOf(sectionId) !== -1) return ch;
+    }
+    return null;
+}
+
+/** Chapters of the given kinds, e.g. uccdsChaptersOfKind(result, ['chapter', 'title', 'untitled']) */
+function uccdsChaptersOfKind(result: UccdsResult, kinds: UccdsChapterKind[]): UccdsChapter[] {
+    return result.chapters.filter((ch: UccdsChapter) => kinds.indexOf(ch.kind) !== -1);
+}
+
+/** The chapter with this key (header section id), or null. Keys survive edits elsewhere in the story */
+function uccdsChapterByKey(result: UccdsResult, key: number): UccdsChapter | null {
+    for (const ch of result.chapters) {
+        if (ch.key === key) return ch;
+    }
+    return null;
+}
+
+/**
+ * The word to keep when a script rewrites or reformats this chapter's header: "Section" for
+ * "[ Section 3: ]", "Intro" for "[ Intro: ]", "Prologue" for a prologue, and `fallback`
+ * ("Chapter") when the header said Chapter / Ch. or had no keyword. Use it instead of hard-coding
+ * "Chapter", so users' own header words survive linting and exporting.
+ */
+function uccdsHeaderWord(chapter: UccdsChapter, fallback: string = "Chapter"): string {
+    const h = chapter.header;
+    const kw = h && h.keyword ? h.keyword.trim() : "";
+    const key = kw.replace(/\.$/, "").toLowerCase();
+    if (!kw || key === "chapter" || key === "ch") return fallback;
+    return kw;
+}
+
+// --- UCCDS client: ask the UCCDS dependency script for chapters ---
+// Paste this file (dist/uccds-client.ts, which already includes the types and helpers) into your
+// script. Needs the "UCCDS: Universal Customizable Chapter Detection System" script installed and
+// enabled in the same story. No permissions are needed for messaging.
+//
+//   const result = await uccdsGetChapters();            // UccdsResult, the user's own chapter rules
+//   for (const ch of result.chapters) api.v1.log(ch.label, ch.title, ch.wordCount);
+//   await uccdsOnChaptersChanged(async () => { ... });  // re-fetch when the story's chapters change
+//
+// Every call rejects with an Error when UCCDS isn't installed or doesn't answer in time, so wrap
+// calls in try/catch and tell the user to install UCCDS (uccdsIsAvailable() checks first).
+
+/** How long a request waits for the dependency before failing (ms) */
+const UCCDS_REQUEST_TIMEOUT = 5000;
+/** How long uccdsConnect() keeps looking for the dependency (ms) */
+const UCCDS_CONNECT_TIMEOUT = 4000;
+const UCCDS_MISSING_MESSAGE = "UCCDS didn't answer. Is the \"UCCDS: Universal Customizable Chapter Detection System\" script installed and enabled?";
+
+interface UccdsPendingRequest {
+    resolve: (data: any) => void;
+    reject: (err: Error) => void;
+    timer: number;
+}
+
+const uccdsClient: {
+    started: boolean;
+    starting: Promise<void> | null;
+    service: UccdsServiceInfo | null;
+    pending: Record<string, UccdsPendingRequest>;
+    counter: number;
+    changeListeners: ((event: UccdsEventMessage) => void | Promise<void>)[];
+    subscribed: boolean;
+} = {
+    started: false,
+    starting: null,
+    service: null,
+    pending: {},
+    counter: 0,
+    changeListeners: [],
+    subscribed: false
+};
+
+function uccdsClientHandle(message: ScriptMessage): void {
+    const msg: any = message.data;
+    if (!msg || typeof msg !== 'object' || typeof msg.type !== 'string') return;
+
+    if (msg.type === 'uccds:reply') {
+        const pending = uccdsClient.pending[msg.requestId];
+        if (!pending) return; // someone else's, or already timed out
+        delete uccdsClient.pending[msg.requestId];
+        api.v1.timers.clearTimeout(pending.timer).catch(() => { /* already fired */ });
+        if (!uccdsClient.service || uccdsClient.service.scriptId !== message.fromScriptId) {
+            const info: any = msg.data && msg.data.scriptId ? msg.data : null;
+            uccdsClient.service = { scriptId: message.fromScriptId, version: info ? info.version : "", protocol: msg.protocol };
+        }
+        if (msg.ok) pending.resolve(msg.data);
+        else pending.reject(new Error(msg.error || "UCCDS request failed."));
+        return;
+    }
+
+    if (msg.type === 'uccds:ready') {
+        uccdsClient.service = { scriptId: message.fromScriptId, version: msg.version || "", protocol: msg.protocol };
+        // The dependency (re)loaded or turned up late: sign up again, and tell listeners, since
+        // the chapters may now come from a different source or different settings
+        if (uccdsClient.changeListeners.length > 0) {
+            uccdsClient.subscribed = false;
+            uccdsSubscribe()
+                .then(() => uccdsNotifyListeners({ type: 'uccds:changed', protocol: msg.protocol, version: msg.version || "" }))
+                .catch((err: any) => api.v1.log("UCCDS client: re-subscribe failed:", err));
+        }
+        return;
+    }
+
+    if (msg.type === 'uccds:changed') {
+        uccdsNotifyListeners(msg as UccdsEventMessage);
+    }
+}
+
+function uccdsNotifyListeners(event: UccdsEventMessage): void {
+    for (const listener of uccdsClient.changeListeners.slice()) {
+        try {
+            const r = listener(event);
+            if (r && typeof (r as any).catch === 'function') (r as Promise<void>).catch((err: any) => api.v1.log("UCCDS client: change listener failed:", err));
+        } catch (err: any) {
+            api.v1.log("UCCDS client: change listener failed:", err);
+        }
+    }
+}
+
+/** Starts listening on the UCCDS channel. Safe to call any number of times */
+async function uccdsClientStart(): Promise<void> {
+    if (uccdsClient.started) return;
+    if (!uccdsClient.starting) {
+        uccdsClient.starting = (async () => {
+            await api.v1.messaging.onMessage((message: ScriptMessage) => uccdsClientHandle(message), { channel: UCCDS_CHANNEL });
+            uccdsClient.started = true;
+        })();
+    }
+    await uccdsClient.starting;
+}
+
+function uccdsNewRequestId(): string {
+    uccdsClient.counter++;
+    return `${api.v1.script.id}:${Date.now().toString(36)}:${uccdsClient.counter}`;
+}
+
+/**
+ * Low-level request. Sent straight to the dependency once it's known, broadcast before that.
+ * Resolves with the reply's data; rejects on an error reply or after `timeoutMs`.
+ */
+async function uccdsRequest(type: UccdsRequestType, payload?: any, timeoutMs: number = UCCDS_REQUEST_TIMEOUT): Promise<any> {
+    await uccdsClientStart();
+    const requestId = uccdsNewRequestId();
+    const message: UccdsRequestMessage = { type, requestId, protocol: UCCDS_PROTOCOL, payload: payload || {} };
+    return new Promise<any>((resolve: (data: any) => void, reject: (err: Error) => void) => {
+        (async () => {
+            const timer = await api.v1.timers.setTimeout(() => {
+                if (!uccdsClient.pending[requestId]) return;
+                delete uccdsClient.pending[requestId];
+                uccdsClient.service = null; // look for it again next time (it may have been disabled or reloaded)
+                reject(new Error(UCCDS_MISSING_MESSAGE));
+            }, timeoutMs);
+            uccdsClient.pending[requestId] = { resolve, reject, timer };
+            if (uccdsClient.service) {
+                await api.v1.messaging.send(uccdsClient.service.scriptId, message, UCCDS_CHANNEL);
+            } else {
+                await api.v1.messaging.broadcast(message, UCCDS_CHANNEL);
+            }
+        })().catch((err: any) => {
+            delete uccdsClient.pending[requestId];
+            reject(err instanceof Error ? err : new Error(String(err)));
+        });
+    });
+}
+
+/**
+ * Finds the dependency, retrying for `timeoutMs` (it may load after your script).
+ * Resolves with its info, or null when it isn't there.
+ */
+async function uccdsConnect(timeoutMs: number = UCCDS_CONNECT_TIMEOUT): Promise<UccdsServiceInfo | null> {
+    await uccdsClientStart();
+    const deadline = Date.now() + timeoutMs;
+    while (true) {
+        const left = deadline - Date.now();
+        if (left <= 0) return null;
+        try {
+            const info: UccdsServiceInfo = await uccdsRequest('uccds:ping', {}, Math.min(800, left));
+            uccdsClient.service = info;
+            return info;
+        } catch {
+            // not up yet: try again until the deadline
+        }
+    }
+}
+
+/** True when the dependency answers within `timeoutMs` */
+async function uccdsIsAvailable(timeoutMs: number = UCCDS_CONNECT_TIMEOUT): Promise<boolean> {
+    if (uccdsClient.service) return true;
+    return (await uccdsConnect(timeoutMs)) !== null;
+}
+
+/** Connects when needed; throws the install hint when the dependency isn't there */
+async function uccdsRequireService(): Promise<void> {
+    if (uccdsClient.service) return;
+    if ((await uccdsConnect()) === null) throw new Error(UCCDS_MISSING_MESSAGE);
+}
+
+/** The dependency's version info, or null when unknown */
+function uccdsDependencyInfo(): UccdsServiceInfo | null {
+    return uccdsClient.service;
+}
+
+/**
+ * The story's chapters under the user's UCCDS settings, plus your overrides.
+ * Example: await uccdsGetChapters({ includeText: false })      // ids, titles and counts only
+ *          await uccdsGetChapters({ settings: { openingText: 'ignore' } })
+ */
+async function uccdsGetChapters(request?: UccdsDetectRequest, timeoutMs: number = UCCDS_REQUEST_TIMEOUT): Promise<UccdsResult> {
+    await uccdsRequireService();
+    const r = request || {};
+    const data = await uccdsRequest('uccds:detect', { ...r, sinceSignature: undefined }, timeoutMs);
+    return data.result as UccdsResult;
+}
+
+/**
+ * Like uccdsGetChapters, but resolves null when nothing changed since `previous`
+ * (cheap: the dependency skips building chapters and sends no text).
+ */
+async function uccdsGetChaptersIfChanged(previous: UccdsResult | null, request?: UccdsDetectRequest, timeoutMs: number = UCCDS_REQUEST_TIMEOUT): Promise<UccdsResult | null> {
+    await uccdsRequireService();
+    const r = request || {};
+    const data = await uccdsRequest('uccds:detect', { ...r, sinceSignature: previous ? previous.signature : undefined }, timeoutMs);
+    return data.unchanged ? null : (data.result as UccdsResult);
+}
+
+/** Parses one line (or several) as a chapter header with the user's UCCDS settings */
+async function uccdsParseHeaderRemote(text: string, settings?: Partial<UccdsSettings>): Promise<UccdsHeader> {
+    await uccdsRequireService();
+    return (await uccdsRequest('uccds:parseHeader', { text, settings })) as UccdsHeader;
+}
+
+async function uccdsParseHeadersRemote(texts: string[], settings?: Partial<UccdsSettings>): Promise<UccdsHeader[]> {
+    await uccdsRequireService();
+    return (await uccdsRequest('uccds:parseHeader', { texts, settings })) as UccdsHeader[];
+}
+
+/** The chapter rules the user picked in the UCCDS config */
+async function uccdsGetUserSettings(): Promise<UccdsSettings> {
+    await uccdsRequireService();
+    return (await uccdsRequest('uccds:getSettings', {})) as UccdsSettings;
+}
+
+async function uccdsSubscribe(): Promise<void> {
+    if (uccdsClient.subscribed) return;
+    await uccdsRequireService();
+    await uccdsRequest('uccds:subscribe', {});
+    uccdsClient.subscribed = true;
+}
+
+/**
+ * Calls `listener` whenever the story's chapters change (checked by the dependency every few
+ * seconds, and after each generation / undo). Re-fetch with uccdsGetChapters inside the listener.
+ * Also called when UCCDS loads or reloads while you're listening.
+ * With { waitForService: true } it doesn't throw when UCCDS isn't there yet: the listener is kept
+ * and starts working as soon as UCCDS loads (useful when your script falls back to its own detection).
+ */
+async function uccdsOnChaptersChanged(listener: (event: UccdsEventMessage) => void | Promise<void>, options?: { waitForService?: boolean }): Promise<void> {
+    uccdsClient.changeListeners.push(listener);
+    try {
+        await uccdsSubscribe();
+    } catch (err: any) {
+        if (!(options && options.waitForService)) throw err;
+    }
+}
+
+/** Stops all change listeners */
+async function uccdsStopListening(): Promise<void> {
+    uccdsClient.changeListeners = [];
+    if (!uccdsClient.subscribed) return;
+    uccdsClient.subscribed = false;
+    try {
+        await uccdsRequest('uccds:unsubscribe', {});
+    } catch {
+        // dependency already gone
+    }
+}
+
 // --- ChatGLM Types ---
 // Header parsing types (ParsedHeader, ChapterKind, HeaderDetectionOptions) come from Editorial/shared/chapter-headers.ts
 
@@ -651,7 +1278,7 @@ interface PromptPlan {
     percentage: number;
 }
 
-type ChatDropdown = 'none' | 'chapter' | 'lore' | 'model';
+type ChatDropdown = 'none' | 'chapter' | 'lore' | 'model' | 'chat';
 
 interface ChatState {
     history: ChatMessage[];
@@ -1177,7 +1804,7 @@ function chapterHeading(ch: DetectedChapter): string {
 async function getActiveStoryContext(): Promise<StoryContext> {
     await loadDetectionConfig();
     const sections = await getDocumentSections();
-    chat.chapters = detectChapters(sections, chat.breakToken, chat.detectBracketedTitles);
+    chat.chapters = await resolveChapters(sections);
 
     // Drop picks for chapters that no longer exist
     const liveKeys = new Set<number>(chat.chapters.map((c: DetectedChapter) => c.key));
@@ -1405,6 +2032,99 @@ async function setSelectedContext(text: string): Promise<boolean> {
     return true;
 }
 
+// --- ChatGLM: chapters from UCCDS ---
+// When the UCCDS dependency script is installed and enabled, chapters come from it, so they follow
+// the rules (and the user's own header words) set in UCCDS's Config tab. Without UCCDS, ChatGLM
+// falls back to its built-in detection (detectChapters in context.ts), exactly as before UCCDS support.
+
+const uccdsLink: {
+    last: UccdsResult | null;
+    /** UCCDS chapter names by key, for the chapter dropdown */
+    names: Record<number, string>;
+    source: 'uccds' | 'builtin';
+} = { last: null, names: {}, source: 'builtin' };
+
+function chapterKindFromUccds(kind: UccdsChapterKind): ChapterSectionKind {
+    return kind === 'untitled' ? 'chapter' : kind;
+}
+
+/** UCCDS chapters in ChatGLM's DetectedChapter shape */
+function chaptersFromUccds(result: UccdsResult): DetectedChapter[] {
+    uccdsLink.names = {};
+    return result.chapters.map((ch: UccdsChapter, i: number) => {
+        uccdsLink.names[ch.key] = ch.name;
+        const body = ch.paragraphs.map((p: string) => p.trim()).filter((p: string) => p.length > 0);
+        const text = (ch.rawHeader ? [ch.rawHeader, ...body] : body).join("\n\n");
+        // Chapter numbers can repeat across Books, so name the book (unless the header already does)
+        const inlineDivision = !!(ch.header && ch.header.divisionLabel);
+        const title = ch.division && ch.kind !== 'division' && !inlineDivision ? `${ch.division}, ${ch.title}` : ch.title;
+        return {
+            key: ch.key,
+            index: i,
+            // ChatGLM uses this for "Chapters 1 to N-1": the running count fits that best
+            number: ch.sequence,
+            title,
+            label: ch.label,
+            text,
+            kind: chapterKindFromUccds(ch.kind),
+            isPrologue: ch.kind === 'prologue' || ch.kind === 'opening',
+            isEpilogue: ch.kind === 'epilogue'
+        };
+    });
+}
+
+/** Used by getActiveStoryContext in place of detectChapters */
+async function resolveChapters(sections: ScannedSection[]): Promise<DetectedChapter[]> {
+    if (uccdsDependencyInfo()) {
+        try {
+            const next = await uccdsGetChaptersIfChanged(uccdsLink.last, {}, 3000);
+            if (next) uccdsLink.last = next;
+            if (uccdsLink.last) {
+                uccdsLink.source = 'uccds';
+                return chaptersFromUccds(uccdsLink.last);
+            }
+        } catch (err: any) {
+            api.v1.log("ChatGLM: UCCDS request failed, using built-in detection: " + formatError(err));
+            uccdsLink.last = null;
+        }
+    }
+    uccdsLink.source = 'builtin';
+    uccdsLink.names = {};
+    return detectChapters(sections, chat.breakToken, chat.detectBracketedTitles);
+}
+
+/** Chapter name for the dropdown: UCCDS's own name when it supplied the chapter */
+function chapterDisplayName(ch: DetectedChapter): string {
+    if (uccdsLink.source === 'uccds' && uccdsLink.names[ch.key] !== undefined) return uccdsLink.names[ch.key];
+    return ch.title.replace(/^(?:Chapter\s*\d*|Prologue\s*(?:\/\s*Introduction)?|Epilogue|Interlude)[:\s-]*/i, "").trim();
+}
+
+function chapterSourceNote(): string {
+    const info = uccdsDependencyInfo();
+    return uccdsLink.source === 'uccds' && info
+        ? `Chapters from UCCDS v${info.version} (rules in UCCDS's Config tab)`
+        : "Built-in chapter detection (UCCDS not found)";
+}
+
+/** Finds UCCDS (it may load after ChatGLM) and refreshes when its chapters change. Called once ChatGLM is up. */
+async function startUccdsLink(): Promise<void> {
+    const refresh = async (): Promise<void> => {
+        if (chat.generating) return;
+        await refreshStatus();
+        if (chat.dropdown === 'chapter') await updatePanel();
+        else await paintStatus();
+    };
+    const info = await uccdsConnect(4000);
+    if (info) {
+        api.v1.log(`ChatGLM: using UCCDS v${info.version} for chapters`);
+        await refresh();
+    } else {
+        api.v1.log("ChatGLM: UCCDS not found, using built-in chapter detection");
+    }
+    // Kept even when UCCDS isn't there yet: it starts working as soon as UCCDS loads
+    await uccdsOnChaptersChanged(async () => { await refresh(); }, { waitForService: true });
+}
+
 // --- ChatGLM Script Token Budget (rate limits) ---
 // Two separate limits apply to scripts: output tokens, and *uncached* input tokens over a rolling
 // 6-minute window. v2.0 only checked output, so a huge prompt could still burn the input
@@ -1526,14 +2246,21 @@ function checkIcon(state: 'all' | 'some' | 'none'): IconId {
     return state === 'all' ? 'check-square' : state === 'some' ? 'minus-square' : 'square';
 }
 
+interface DialogChoice {
+    value: string;
+    label: string;
+    icon: IconId;
+    variant: ButtonVariant;
+}
+
 /**
- * Yes/no dialog. Resolves before closing so the closed-handler fallback never wins, and treats
- * the X button as "cancel".
+ * Dialog with a Cancel button plus `choices`; resolves to the picked value, or null for Cancel.
+ * Resolves before closing so the closed-handler fallback never wins, and treats the X button as "cancel".
  */
-async function confirmDialog(title: string, message: string, confirmText: string, danger: boolean): Promise<boolean> {
-    return new Promise<boolean>(async (resolve: (value: boolean) => void) => {
+async function choiceDialog(title: string, message: string, choices: DialogChoice[]): Promise<string | null> {
+    return new Promise<string | null>(async (resolve: (value: string | null) => void) => {
         let done = false;
-        const finish = (value: boolean): void => {
+        const finish = (value: string | null): void => {
             if (!done) {
                 done = true;
                 resolve(value);
@@ -1545,13 +2272,21 @@ async function confirmDialog(title: string, message: string, confirmText: string
             content: [
                 text(message),
                 row([
-                    button("Cancel", async () => { finish(false); await modal.close(); }, { icon: 'x', variant: 'subtle' }),
-                    button(confirmText, async () => { finish(true); await modal.close(); }, { icon: danger ? 'trash-2' : 'check', variant: danger ? 'danger' : 'primary' })
+                    button("Cancel", async () => { finish(null); await modal.close(); }, { icon: 'x', variant: 'subtle' }),
+                    ...choices.map((c: DialogChoice) => button(c.label, async () => { finish(c.value); await modal.close(); }, { icon: c.icon, variant: c.variant }))
                 ], { justifyContent: 'flex-end', gap: '8px', marginTop: '12px' })
             ]
         });
-        modal.closed.then(() => finish(false));
+        modal.closed.then(() => finish(null));
     });
+}
+
+/** Yes/no dialog */
+async function confirmDialog(title: string, message: string, confirmText: string, danger: boolean): Promise<boolean> {
+    const picked = await choiceDialog(title, message, [
+        { value: "yes", label: confirmText, icon: danger ? 'trash-2' : 'check', variant: danger ? 'danger' : 'primary' }
+    ]);
+    return picked === "yes";
 }
 
 // --- Chat message rendering helpers ---
@@ -2034,6 +2769,195 @@ async function openMultilineInputModal(): Promise<void> {
     });
 }
 
+// --- ChatGLM Chat Import / Export ---
+// Export saves the story's chat as JSON (read back by Import) and/or a Markdown transcript, or
+// copies the transcript to the clipboard. Import reads a JSON export (or a bare message array)
+// and replaces or appends to the current chat. Redo alternatives are session-only and not exported.
+
+const CHAT_EXPORT_FORMAT = "chatglm-chat";
+const CHAT_EXPORT_VERSION = 1;
+
+type ExportKind = 'json' | 'markdown' | 'both';
+
+interface ChatExportFile {
+    format: string;
+    version: number;
+    exportedAt: string;
+    story: string;
+    messages: ChatMessage[];
+}
+
+interface ParsedImport {
+    messages: ChatMessage[];
+    story: string;
+    skipped: number;
+}
+
+async function currentStoryTitle(): Promise<string> {
+    try {
+        return String((await api.v1.story.title.get()) || "").trim();
+    } catch {
+        return "";
+    }
+}
+
+function datestamp(date: Date): string {
+    const pad = (n: number): string => String(n).padStart(2, "0");
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+/** "ChatGLM - My Story - 2026-11-03", minus characters file systems reject */
+function exportFileBase(storyTitle: string, date: Date): string {
+    const safeTitle = storyTitle.replace(/[\\/:*?"<>|\u0000-\u001f]/g, "").replace(/\s+/g, " ").trim().slice(0, 60);
+    return safeTitle ? `ChatGLM - ${safeTitle} - ${datestamp(date)}` : `ChatGLM chat - ${datestamp(date)}`;
+}
+
+/** Only the known message fields, so stray data in the history never leaks into a file */
+function cleanMessage(msg: ChatMessage): ChatMessage {
+    const out: ChatMessage = { role: msg.role, content: msg.content };
+    if (typeof msg.modelDisplayName === "string" && msg.modelDisplayName) out.modelDisplayName = msg.modelDisplayName;
+    if (typeof msg.modelId === "string" && msg.modelId) out.modelId = msg.modelId;
+    return out;
+}
+
+function chatToJson(storyTitle: string, date: Date): string {
+    const file: ChatExportFile = {
+        format: CHAT_EXPORT_FORMAT,
+        version: CHAT_EXPORT_VERSION,
+        exportedAt: date.toISOString(),
+        story: storyTitle,
+        messages: chat.history.map(cleanMessage)
+    };
+    return JSON.stringify(file, null, 2);
+}
+
+function chatToMarkdown(storyTitle: string, date: Date): string {
+    const count = chat.history.length;
+    const lines: string[] = [
+        `# ChatGLM chat${storyTitle ? `: ${storyTitle}` : ""}`,
+        "",
+        `_Exported ${datestamp(date)} · ${count} message${count === 1 ? "" : "s"}_`
+    ];
+    for (const msg of chat.history) {
+        const speaker = msg.role === "user" ? "You" : (msg.modelDisplayName || "Assistant");
+        lines.push("", "---", "", `### ${speaker}`, "", msg.content.trim());
+    }
+    return lines.join("\n") + "\n";
+}
+
+async function exportChat(kind: ExportKind): Promise<void> {
+    if (chat.history.length === 0) {
+        await api.v1.ui.toast("Nothing to export: this story's chat is empty.", { type: "warning" });
+        return;
+    }
+    try {
+        if (!(await api.v1.permissions.request("fileDownload", "ChatGLM needs to save your chat as a file."))) {
+            await api.v1.ui.toast("Export needs permission to save files.", { type: "warning" });
+            return;
+        }
+        const date = new Date();
+        const title = await currentStoryTitle();
+        const base = exportFileBase(title, date);
+        if (kind !== 'markdown') await api.v1.file.save(`${base}.json`, chatToJson(title, date));
+        if (kind !== 'json') await api.v1.file.save(`${base}.md`, chatToMarkdown(title, date));
+        const what = kind === 'both' ? "JSON and Markdown" : kind === 'json' ? "JSON" : "Markdown";
+        await api.v1.ui.toast(`Exported ${chat.history.length} messages (${what}).`, { type: "success" });
+    } catch (err: any) {
+        await api.v1.ui.toast("Export failed: " + formatError(err), { type: "error" });
+    }
+}
+
+async function copyChatMarkdown(): Promise<void> {
+    if (chat.history.length === 0) {
+        await api.v1.ui.toast("Nothing to copy: this story's chat is empty.", { type: "warning" });
+        return;
+    }
+    try {
+        if (!(await api.v1.permissions.request("clipboardWrite", "ChatGLM needs to copy your chat to the clipboard."))) {
+            await api.v1.ui.toast("Copying needs clipboard permission.", { type: "warning" });
+            return;
+        }
+        await api.v1.clipboard.writeText(chatToMarkdown(await currentStoryTitle(), new Date()));
+        await api.v1.ui.toast(`Copied ${chat.history.length} messages as Markdown.`, { type: "success" });
+    } catch (err: any) {
+        await api.v1.ui.toast("Copy failed: " + formatError(err), { type: "error" });
+    }
+}
+
+/**
+ * Reads a ChatGLM JSON export, or a bare array of {role, content} messages. Invalid messages are
+ * skipped and counted. Throws a user-facing message when nothing usable is in the file.
+ */
+function parseChatImport(raw: string): ParsedImport {
+    let data: any;
+    try {
+        data = JSON.parse(raw);
+    } catch {
+        throw new Error("That file isn't valid JSON. Import reads the .json file from Export.");
+    }
+    let list: any[];
+    let story = "";
+    if (Array.isArray(data)) {
+        list = data;
+    } else if (data && typeof data === "object" && Array.isArray(data.messages)) {
+        if (data.format !== undefined && data.format !== CHAT_EXPORT_FORMAT) throw new Error(`Not a ChatGLM chat export (format "${String(data.format)}").`);
+        if (typeof data.version === "number" && data.version > CHAT_EXPORT_VERSION) throw new Error("This chat was exported by a newer ChatGLM. Update ChatGLM to import it.");
+        list = data.messages;
+        if (typeof data.story === "string") story = data.story;
+    } else {
+        throw new Error("No chat messages found in that file.");
+    }
+    const messages = list.filter(isChatMessage).map(cleanMessage);
+    if (messages.length === 0) throw new Error("No chat messages found in that file.");
+    return { messages, story, skipped: list.length - messages.length };
+}
+
+async function importChat(): Promise<void> {
+    if (chat.generating) return;
+    let parsed: ParsedImport;
+    try {
+        if (!(await api.v1.permissions.request("fileInput", "ChatGLM needs to open the chat file you pick."))) {
+            await api.v1.ui.toast("Import needs permission to open files.", { type: "warning" });
+            return;
+        }
+        const raw = await api.v1.file.prompt({ accept: ".json,application/json" });
+        if (typeof raw !== "string") return; // picker cancelled
+        parsed = parseChatImport(raw);
+    } catch (err: any) {
+        await api.v1.ui.toast("Import failed: " + formatError(err), { type: "error" });
+        return;
+    }
+
+    const count = parsed.messages.length;
+    const from = parsed.story ? ` from **${parsed.story}**` : "";
+    let mode = "replace";
+    if (chat.history.length > 0) {
+        const picked = await choiceDialog("Import chat",
+            `Import **${count}** messages${from}. This story's chat already has **${chat.history.length}** messages: replace them, or add the imported ones after them?`, [
+                { value: "append", label: "Append", icon: 'plus', variant: 'default' },
+                { value: "replace", label: "Replace", icon: 'trash-2', variant: 'danger' }
+            ]);
+        if (!picked) return;
+        mode = picked;
+    }
+    // The chat may have started generating while the dialog was open
+    if (chat.generating) return;
+
+    if (mode === "replace") {
+        chat.history = parsed.messages;
+        chat.alternatives = {};
+    } else {
+        // Existing indices don't move, so their redo versions stay valid
+        chat.history = chat.history.concat(parsed.messages);
+    }
+    refreshCutOffFlag();
+    await saveChatHistory();
+    await refreshStatus();
+    await updatePanel();
+    const skipped = parsed.skipped > 0 ? ` (${parsed.skipped} unreadable skipped)` : "";
+    await api.v1.ui.toast(`Imported ${count} messages${skipped}.`, { type: "success" });
+}
+
 // --- ChatGLM Panel ---
 
 function truncateLabel(value: string, max: number): string {
@@ -2061,7 +2985,7 @@ function statusInfo(): { text: string; color: string } {
         let label: string;
         if (picked.length === 1) {
             const ch = picked[0];
-            const name = ch.title.replace(/^(?:Chapter\s*\d*|Prologue\s*(?:\/\s*Introduction)?|Epilogue|Interlude)[:\s-]*/i, "").trim();
+            const name = chapterDisplayName(ch);
             label = `${ch.label}${prev}${name ? `: ${truncateLabel(name, 14)}` : ""}`;
         } else {
             const labels = picked.map((c: DetectedChapter) => c.label).join(", ");
@@ -2219,13 +3143,14 @@ function chapterDropup(): UIPart {
             icon: chat.usePreviousContext ? 'check-square' : 'square', variant: 'subtle', style: S.dropupRow
         }));
     }
+    items.push(text(chapterSourceNote(), { markdown: false, style: sx(S.muted, { padding: '4px 8px', fontSize: '0.85em' }) }));
     if (chat.chapters.length === 0) {
         items.push(text(`No chapters found (${chat.breakToken})`, { markdown: false, style: sx(S.muted, { padding: '6px 8px', fontStyle: 'italic' }) }));
     }
     for (const ch of chat.chapters) {
         const checked = chat.chapterKeys.includes(ch.key);
         const sole = checked && chat.chapterKeys.length === 1;
-        const name = ch.title.replace(/^(?:Chapter\s*\d*|Prologue\s*(?:\/\s*Introduction)?|Epilogue|Interlude)[:\s-]*/i, "").trim();
+        const name = chapterDisplayName(ch);
         const full = name && name !== ch.label ? `${ch.label}: ${name}` : ch.label;
         items.push(row([
             button("", async () => {
@@ -2324,6 +3249,25 @@ function modelDropup(): UIPart {
     })), S.dropup);
 }
 
+/** Export / import / clear: each row closes the dropup, then acts */
+function chatDropup(): UIPart {
+    const hasChat = chat.history.length > 0;
+    const item = (label: string, icon: IconId, action: () => Promise<void>, enabled: boolean = true, danger: boolean = false): UIPart =>
+        button(label, async () => {
+            chat.dropdown = 'none';
+            await updatePanel();
+            await action();
+        }, { icon, variant: 'subtle', disabled: !enabled, style: sx(S.dropupRow, danger ? { color: COLOR.danger } : {}) });
+    return column([
+        item("Export as JSON", 'download', async () => exportChat('json'), hasChat),
+        item("Export as Markdown", 'file-text', async () => exportChat('markdown'), hasChat),
+        item("Export both", 'download', async () => exportChat('both'), hasChat),
+        item("Copy as Markdown", 'copy', copyChatMarkdown, hasChat),
+        item("Import from JSON...", 'upload', importChat),
+        item("Clear chat", 'trash-2', clearChat, hasChat, true)
+    ], S.dropup);
+}
+
 function toolbarRow(): UIPart {
     if (chat.generating) {
         return row([
@@ -2333,7 +3277,9 @@ function toolbarRow(): UIPart {
         ]);
     }
     return row([
-        button("Clear", clearChat, { icon: 'message-square', style: S.toolbarButton }),
+        button("Chat", async () => toggleDropdown('chat'), {
+            icon: chat.dropdown === 'chat' ? 'chevron-down' : 'chevron-up', style: S.toolbarButton
+        }),
         button("Compact", compactChatHistory, { icon: 'message-circle', style: S.toolbarButton }),
         button("Instruct", generateInstruction, { icon: 'terminal', style: S.toolbarButton }),
         button(truncateLabel(chat.modelName, 9), async () => toggleDropdown('model'), {
@@ -2370,6 +3316,7 @@ function getUiContent(): UIPart[] {
     if (chat.dropdown === 'chapter') parts.push(chapterDropup());
     if (chat.dropdown === 'lore') parts.push(loreDropup());
     if (chat.dropdown === 'model') parts.push(modelDropup());
+    if (chat.dropdown === 'chat') parts.push(chatDropup());
     if (chat.hasCutOffResponse && !chat.generating) {
         parts.push(row([
             button("Continue Response", continueResponse, { icon: 'play', variant: 'primary', style: { flex: '1 1 auto', height: '30px', fontSize: '0.85em', justifyContent: 'center' } }),
@@ -2500,6 +3447,7 @@ async function initChatGLM(): Promise<void> {
         await updatePanel();
         await api.v1.ui.openPanel(PANEL_ID);
         startStatusPoll();
+        startUccdsLink().catch((err: any) => api.v1.log("ChatGLM: UCCDS start failed: " + formatError(err)));
         api.v1.log("ChatGLM v2 initialized");
     } catch (err: any) {
         api.v1.error("ChatGLM: initialization failed", err);
